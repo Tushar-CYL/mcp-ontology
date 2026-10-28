@@ -87,21 +87,53 @@ def human(n: int) -> str:
     return f"{f:,.1f} GiB"
 
 
-def remote_size(client: httpx.Client, url: str) -> int | None:
+def remote_size(client: httpx.Client, url: str) -> tuple[int | None, str | None]:
+    """Size of the remote file, plus WHY if we could not get it.
+
+    Returns (size, None) on success, (None, reason) on failure. An earlier
+    version swallowed the exception entirely and printed "HEAD failed",
+    which told a user nothing about whether it was DNS, TLS, a proxy or a
+    403 - so nobody could act on it.
+
+    Falls back to a one-byte ranged GET, because plenty of corporate
+    proxies forward GET happily while blocking HEAD outright. A failed HEAD
+    is not a reason to give up on the file.
+    """
+    why = []
     try:
         r = client.head(url, timeout=45.0, follow_redirects=True)
         if r.status_code == 200:
-            return int(r.headers.get("content-length", 0)) or None
-    except httpx.HTTPError:
-        pass
-    return None
+            n = int(r.headers.get("content-length", 0))
+            if n:
+                return n, None
+        why.append(f"HEAD -> HTTP {r.status_code}")
+    except httpx.HTTPError as e:
+        why.append(f"HEAD -> {type(e).__name__}: {e}")
+
+    try:
+        r = client.get(url, headers={"Range": "bytes=0-0"}, timeout=45.0,
+                       follow_redirects=True)
+        if r.status_code == 206:
+            cr = r.headers.get("content-range", "")
+            if "/" in cr:
+                return int(cr.rsplit("/", 1)[1]), None
+        if r.status_code == 200:
+            n = int(r.headers.get("content-length", 0))
+            if n:
+                return n, None
+        why.append(f"ranged GET -> HTTP {r.status_code}")
+    except httpx.HTTPError as e:
+        why.append(f"ranged GET -> {type(e).__name__}: {e}")
+
+    return None, "; ".join(why)
 
 
 def download(client: httpx.Client, url: str, dest: Path, retries: int = 5) -> bool:
     """Resumable download. Returns True if the file is complete on disk."""
-    total = remote_size(client, url)
+    total, why = remote_size(client, url)
     if total is None:
-        print(f"    ! HEAD failed, skipping {url}", file=sys.stderr)
+        print(f"    ! cannot reach {dest.name}", file=sys.stderr)
+        print(f"      {why}", file=sys.stderr)
         return False
 
     if dest.exists() and dest.stat().st_size == total:
@@ -161,6 +193,9 @@ def main() -> int:
     ap.add_argument("--only", action="append", choices=[t.name for t in TABLES],
                     help="restrict to one or more tables (repeatable)")
     ap.add_argument("--dest", type=Path, default=Path("data/raw"))
+    ap.add_argument("--insecure", action="store_true",
+                    help="skip TLS verification; for corporate TLS "
+                         "interception only")
     ap.add_argument("--dry-run", action="store_true",
                     help="list files and total bytes without downloading")
     args = ap.parse_args()
@@ -182,14 +217,21 @@ def main() -> int:
             plan.append((t, idx, url, args.dest / t.name / f"{t.name}_{idx}.tar.gz"))
 
     headers = {"User-Agent": "okg-ingest/0.1 (+research; resumable)"}
-    with httpx.Client(headers=headers, http2=False) as client:
+    # trust_env is on by default, so HTTP_PROXY / HTTPS_PROXY are honoured
+    # without any extra work. --insecure exists only for corporate TLS
+    # interception, where the proxy presents its own certificate.
+    with httpx.Client(headers=headers, http2=False,
+                      verify=not args.insecure) as client:
         if args.dry_run:
             total = 0
             for t, idx, url, dest in plan:
-                sz = remote_size(client, url)
+                sz, why = remote_size(client, url)
                 total += sz or 0
-                print(f"  {t.name:<12} idx {idx:<5} {human(sz) if sz else 'UNAVAILABLE':>12}"
+                print(f"  {t.name:<12} idx {idx:<5} "
+                      f"{human(sz) if sz else 'UNAVAILABLE':>12}"
                       f"   {'(on disk)' if dest.exists() else ''}")
+                if sz is None:
+                    print(f"               {why}")
             print(f"\n{len(plan)} files, {human(total)} total")
             return 0
 
@@ -203,6 +245,36 @@ def main() -> int:
                 failed += 1
 
     print(f"\ndone: {ok} complete, {failed} failed")
+
+    # Nothing at all got through: that is a network policy problem, not a
+    # flaky transfer, and retrying will not help. Say so, and say what will.
+    if failed and not ok:
+        print(f"""
+NOTHING downloaded. The reason is printed above each file - read it, it
+says which of these you are hitting:
+
+  "ConnectError" / "getaddrinfo failed"
+      DNS or egress is blocked. You are probably behind a proxy. Set it:
+          $env:HTTPS_PROXY = "http://user:pass@proxy.company.com:8080"
+          $env:HTTP_PROXY  = $env:HTTPS_PROXY
+      then run setup again.
+
+  "SSLError" / "CERTIFICATE_VERIFY_FAILED"
+      Your company inspects TLS with its own certificate. Either point
+      Python at the company CA bundle:
+          $env:SSL_CERT_FILE = "C:\\path\\to\\company-ca.pem"
+      or, if you accept the risk on a corporate network:
+          python ingest\\fetch.py --start 0d0 --minutes 9 --insecure
+
+  "HTTP 403" / "HTTP 404"
+      The host is reachable but refusing. A web filter is likely blocking
+      the domain {BASE.split('/')[2]}.
+
+If none of that is available to you, you do not need to download anything:
+copy the `data\\raw` folder from a machine that already has it, put it in
+this project, and run setup again. It will find the archives and skip this
+step entirely.""", file=sys.stderr)
+
     return 1 if failed else 0
 
 

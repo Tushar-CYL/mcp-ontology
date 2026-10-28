@@ -125,7 +125,34 @@ if ($have -ge 8) {
     Say "Downloading the dataset (about 2 GB, a few minutes)"
     Write-Host "    This resumes if interrupted - just run setup again."
     & $vpy ingest\fetch.py --start 0d0 --minutes 9
-    if ($LASTEXITCODE -ne 0) { Die "Download failed." "Run .\setup.ps1 again - it resumes where it stopped." }
+    if ($LASTEXITCODE -ne 0) {
+        Die "Download failed." @"
+  Read the reason printed above each file - fetch.py now says exactly what
+  went wrong (DNS, TLS, proxy, or a blocked domain) and what to set.
+
+  Quick answers:
+
+    Partial download, some files got through
+        Run .\setup.ps1 again. It resumes, nothing is lost.
+
+    Behind a corporate proxy
+        `$env:HTTPS_PROXY = "http://user:pass@proxy.company.com:8080"
+        `$env:HTTP_PROXY  = `$env:HTTPS_PROXY
+        .\setup.ps1
+
+    Company inspects TLS (CERTIFICATE_VERIFY_FAILED)
+        `$env:SSL_CERT_FILE = "C:\path\to\company-ca.pem"
+        .\setup.ps1
+      or, accepting the risk on a corporate network:
+        .venv\Scripts\python.exe ingest\fetch.py --start 0d0 --minutes 9 --insecure
+        .\setup.ps1
+
+    Nothing works - the network simply will not allow it
+        You do not have to download anything. Copy the `data\raw` folder
+        from a machine that already has it into this project, then run
+        .\setup.ps1 again. It will find the archives and skip this step.
+"@
+    }
 }
 Good "dataset present"
 
