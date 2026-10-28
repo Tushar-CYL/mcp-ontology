@@ -1,0 +1,253 @@
+# Semantic layer: every metric defined ONCE.
+#
+# The API, the notebooks, the visualisation and the agent all compile their
+# SQL from this file. Three consumers computing "latency" three slightly
+# different ways is the problem this layer exists to remove.
+#
+# A note on what is NOT here: there is no error_rate. This release carries
+# response times and call rates but no status codes or error flags, so an
+# error rate cannot be computed from it. Defining one anyway would be a
+# fabricated number wearing a metric's name. slow_call_rate is the honest
+# substitute, with the latency threshold exposed as an explicit parameter
+# rather than hidden inside the definition.
+
+version: "0.2.0"
+
+# Dimensions are declared PER SOURCE, because the same concept lives in a
+# different column in each table: a microservice is `um` in calls but `ms`
+# in ms_metrics. An earlier single global map was wrong and would have
+# silently compiled queries against the wrong column.
+#
+# `refs` marks dimensions whose stored value is a node id. The compiler
+# resolves a human-supplied name through node_id() so callers can filter by
+# 'MS_12345' and never see an internal id.
+sources:
+  calls:
+    table: calls
+    time: ts
+    dimensions:
+      microservice:   um
+      callee:         dm
+      interface:      interface
+      online_service: service
+      rpctype:        rpctype
+    refs:
+      microservice: Microservice
+      callee:       Microservice
+
+  node_metrics:
+    table: node_metrics
+    time: ts
+    dimensions:
+      node: node
+    refs:
+      node: Node
+
+  ms_metrics:
+    table: ms_metrics
+    time: ts
+    dimensions:
+      microservice: ms
+      container:    container
+      node:         node
+    refs:
+      microservice: Microservice
+      container:    Container
+      node:         Node
+
+  ms_rt_mcr:
+    table: ms_rt_mcr
+    time: ts
+    dimensions:
+      microservice: ms
+      container:    container
+      node:         node
+    refs:
+      microservice: Microservice
+      container:    Container
+      node:         Node
+
+parameters:
+  slow_ms:
+    default: 500
+    description: Latency above which a call counts as slow, in milliseconds.
+
+metrics:
+
+  # ---------------------------------------------------- from the span table
+  - name: rt_p50
+    title: Median response time
+    unit: ms
+    provenance: measured
+    source: calls
+    expr: "quantile_cont(rt, 0.5)"
+    filter: "rt IS NOT NULL AND rt >= 0"
+    notes: >
+      The spec says the downstream side of an RPC pair carries a negative
+      rt; measured, this release has none. The filter stays as a guard, and
+      excluding rather than abs()-ing is what would keep the same call from
+      being counted twice if the convention ever returns.
+
+  - name: rt_p99
+    title: 99th percentile response time
+    unit: ms
+    provenance: measured
+    source: calls
+    expr: "quantile_cont(rt, 0.99)"
+    filter: "rt IS NOT NULL AND rt >= 0"
+
+  - name: rt_max
+    title: Slowest observed call
+    unit: ms
+    provenance: measured
+    source: calls
+    expr: "max(rt)"
+    filter: "rt IS NOT NULL AND rt >= 0"
+
+  - name: call_count
+    title: Calls observed
+    unit: calls
+    provenance: measured
+    source: calls
+    expr: "count(*)"
+
+  - name: call_rate
+    title: Calls per second
+    unit: calls/s
+    provenance: measured
+    source: calls
+    expr: "count(*)::DOUBLE / {bucket_seconds}"
+
+  - name: slow_call_rate
+    title: Share of calls slower than the threshold
+    unit: ratio
+    provenance: measured
+    source: calls
+    expr: "avg(CASE WHEN rt > {slow_ms} THEN 1.0 ELSE 0.0 END)"
+    filter: "rt IS NOT NULL AND rt >= 0"
+    notes: >
+      Stands in for the error rate this dataset cannot support. The
+      threshold is a parameter, never a constant baked into the definition,
+      so a consumer always knows which number they asked for.
+
+  - name: unmeasured_rt_rate
+    title: Share of calls with no usable response time
+    unit: ratio
+    provenance: measured
+    source: calls
+    expr: "avg(CASE WHEN rt IS NULL THEN 1.0 ELSE 0.0 END)"
+    notes: >
+      1.4% of spans carry the literal string "None" instead of a number.
+      Published alongside the latency metrics on purpose: a p99 computed
+      over 98.6% coverage should be read differently from one over 100%,
+      and hiding the gap is how a metric starts lying.
+
+  # -------------------------------------------------- from resource samples
+  - name: node_cpu_saturation
+    title: Node CPU utilisation
+    unit: ratio
+    provenance: measured
+    source: node_metrics
+    expr: "avg(cpu_utilization)"
+    filter: "cpu_utilization IS NOT NULL"
+
+  - name: node_cpu_peak
+    title: Peak node CPU utilisation
+    unit: ratio
+    provenance: measured
+    source: node_metrics
+    expr: "max(cpu_utilization)"
+    filter: "cpu_utilization IS NOT NULL"
+
+  - name: node_mem_saturation
+    title: Node memory utilisation
+    unit: ratio
+    provenance: measured
+    source: node_metrics
+    expr: "avg(memory_utilization)"
+    filter: "memory_utilization IS NOT NULL"
+
+  - name: container_cpu
+    title: Container CPU utilisation
+    unit: ratio
+    provenance: measured
+    source: ms_metrics
+    expr: "avg(cpu_utilization)"
+    filter: "cpu_utilization IS NOT NULL"
+
+  - name: instance_count
+    title: Distinct containers seen
+    unit: containers
+    provenance: measured
+    source: ms_metrics
+    expr: "count(DISTINCT container)"
+
+  - name: provider_rt
+    title: Response time serving inbound RPC
+    unit: ms
+    provenance: measured
+    source: ms_rt_mcr
+    expr: "avg(NULLIF(providerrpc_rt, 0))"
+    filter: "providerrpc_rt IS NOT NULL"
+    notes: >
+      Zero means "no calls in this minute", not "instant", so it is nulled
+      before averaging. Treating 0 as a measurement would drag every idle
+      container into the average and make busy services look fast.
+
+  - name: consumer_rt
+    title: Response time waiting on outbound RPC
+    unit: ms
+    provenance: measured
+    source: ms_rt_mcr
+    expr: "avg(NULLIF(consumerrpc_rt, 0))"
+    filter: "consumerrpc_rt IS NOT NULL"
+
+# Graph metrics carry their own SQL. They are not aggregates over a fact
+# table, so the generic compiler cannot express them - but they belong in
+# this catalogue all the same, because they are numbers people quote and
+# must mean one thing. {as_of} and {limit} are substituted by the compiler.
+graph_metrics:
+
+  - name: fan_out
+    title: Distinct downstream services called
+    unit: services
+    provenance: derived
+    sql: |
+      SELECT n.nkey AS microservice, count(DISTINCT e.dst) AS value
+      FROM edges e JOIN nodes n ON n.id = e.src
+      WHERE e.rel = rel_code('calls')
+        AND valid_at(e.valid_from, e.valid_to, {as_of})
+      GROUP BY n.nkey ORDER BY value DESC LIMIT {limit}
+
+  - name: fan_in
+    title: Distinct upstream services calling this one
+    unit: services
+    provenance: derived
+    sql: |
+      SELECT n.nkey AS microservice, count(DISTINCT e.src) AS value
+      FROM edges e JOIN nodes n ON n.id = e.dst
+      WHERE e.rel = rel_code('calls')
+        AND valid_at(e.valid_from, e.valid_to, {as_of})
+      GROUP BY n.nkey ORDER BY value DESC LIMIT {limit}
+
+  - name: node_packing_density
+    title: Containers resident on a node
+    unit: containers
+    provenance: derived
+    sql: |
+      SELECT n.nkey AS node, count(DISTINCT e.src) AS value
+      FROM edges e JOIN nodes n ON n.id = e.dst
+      WHERE e.rel = rel_code('runs_on')
+        AND valid_at(e.valid_from, e.valid_to, {as_of})
+      GROUP BY n.nkey ORDER BY value DESC LIMIT {limit}
+
+  - name: team_span
+    title: Services in each derived team
+    unit: services
+    provenance: derived
+    sql: |
+      SELECT t.nkey AS team, count(DISTINCT e.dst) AS value
+      FROM edges e JOIN nodes t ON t.id = e.src
+      WHERE e.rel = rel_code('owns')
+        AND valid_at(e.valid_from, e.valid_to, {as_of})
+      GROUP BY t.nkey ORDER BY value DESC LIMIT {limit}

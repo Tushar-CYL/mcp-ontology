@@ -1,0 +1,25 @@
+# Pinned so a rebuild on another machine gets the same behaviour.
+# Only permissively licensed packages (MIT / BSD / Apache-2.0): this code is
+# shipped to clients, so a GPL/AGPL dependency is not acceptable here.
+
+# ---- needed to run what exists today -------------------------------------
+duckdb==2.0.0           # MIT   - embedded engine, no server
+PyYAML==6.0.3           # MIT   - reads ontology.yaml and metrics.yaml
+httpx==0.28.1           # BSD   - resumable dataset download
+networkx==3.7           # BSD   - community detection for derived teams
+psycopg[binary]==3.3.6  # LGPL* - Postgres driver; see note below
+
+# ---- needed for the layers still being built ------------------------------
+# Uncomment as each lands. Installing them early costs ~300 MB.
+# numpy==2.5.4          # BSD   - vector maths
+# fastembed==0.9.1      # Apache- CPU embeddings, no GPU, no API key
+# onnxruntime==1.31.1   # MIT   - runs the embedding model
+# tiktoken==0.14.0      # MIT   - token counting for the context budget
+# fastapi==0.162.0      # MIT   - the HTTP API
+# uvicorn==0.54.0       # BSD   - serves it
+# mcp==2.3.0            # MIT   - agent tool protocol
+
+# * psycopg3 is LGPL. It is a driver we IMPORT, not code we modify or
+#   statically link, which is the normal LGPL use. Flag it in the licence
+#   audit anyway so nobody is surprised. It is only needed for the Postgres
+#   engine - the DuckDB path does not import it.

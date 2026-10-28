@@ -1,0 +1,827 @@
+================================================================================
+
+                    C O N T E X T   S T A C K   —   R & D
+
+                          S Y S T E M   D E S I G N
+
+================================================================================
+
+  Build the same four layers in four different stacks, on the same data,
+  and measure them.  Show that a free stack can do what a paid one does.
+
+  Simple words are used on purpose.  Anyone should be able to read this,
+  not only a data engineer.
+
+  Project   : D:\tushar\ontology
+  Data      : Alibaba cluster-trace-microservices-v2022
+  Written   : 2026-10-28
+
+
+--------------------------------------------------------------------------------
+  CONTENTS
+--------------------------------------------------------------------------------
+
+   1.  Why we are doing this
+   2.  The four layers — the one page picture
+   3.  What the graph actually looks like
+   4.  Why time on every link matters
+   5.  How data moves through the system
+   6.  The four arms of the experiment
+   7.  Tools for every layer, in every arm
+   8.  The free stack we want to hand over
+   9.  How we score each arm
+  10.  What we have already found
+  11.  What we deliberately did not build
+  12.  Tool research done so far
+  13.  Build order
+  14.  Files and folders
+  15.  How we know it worked
+  16.  Risks
+  17.  Still open
+
+
+
+================================================================================
+  1.  WHY WE ARE DOING THIS
+================================================================================
+
+  Our company has already seen one version of this.  It was built inside
+  DATABRICKS.  All four layers, plus charts on top.  It works.
+
+  It also costs money every hour it runs.
+
+  The manager asked for R&D, not one more project.  R&D means: try it
+  several different ways, measure each way, and report which way is best
+  for which situation.
+
+  So the question is not "can we build it?"  We already did, once.
+
+  The question is:
+
+        Which tools should we use for each layer?
+        What does each tool really give us?
+        How much does it cost?
+
+  And one answer we want to be able to PROVE:
+
+        "Here is a version you can use for free."
+
+
+
+================================================================================
+  2.  THE FOUR LAYERS — THE ONE PAGE PICTURE
+================================================================================
+
+  Read from the bottom up.  Raw data at the bottom.  A useful answer at
+  the top.  Each layer sits on the one below it.
+
+
+                    ┌────────────────────────────────┐
+                    │   A PERSON, OR AN AI AGENT     │
+                    │                                │
+                    │  "Why was MS_5261 slow at      │
+                    │   00:02:30, and who fixes it?" │
+                    └────────────────┬───────────────┘
+                                     │  question
+                                     ▼
+ ╔══════════════════════════════════════════════════════════════════╗
+ ║  LAYER 4 — CONTEXT LAYER              "pack the answer"          ║
+ ║                                                                  ║
+ ║  Reads the question.  Asks the layers below for facts.           ║
+ ║  Keeps only what fits a size limit (a token budget).             ║
+ ║  Tags every fact: did we MEASURE this, or GUESS it?              ║
+ ║  Returns one small, honest bundle.                               ║
+ ╚═══════════════════╤════════════════════════╤═════════════════════╝
+                     │                        │
+       ┌─────────────▼───────────┐ ┌──────────▼───────────────┐
+       │ LAYER 3a                │ │ LAYER 3b                 │
+       │ SEMANTIC LAYER          │ │ SEMANTIC SEARCH          │
+       │ "one meaning per number"│ │ "find the right text"    │
+       │                         │ │                          │
+       │ p99 latency, call rate, │ │ Old incident reports,    │
+       │ CPU use — each written  │ │ runbooks, post-mortems.  │
+       │ ONE time, in one file.  │ │ Search by meaning AND    │
+       │ Everyone uses that one. │ │ by exact word.           │
+       └─────────────┬───────────┘ └──────────┬───────────────┘
+                     │                        │
+ ╔═══════════════════▼════════════════════════▼═════════════════════╗
+ ║  LAYER 2 — KNOWLEDGE GRAPH         "what connects to what"       ║
+ ║                                                                  ║
+ ║  1.27 million things.  1.52 million links between them.          ║
+ ║  Every link carries a FROM time and a TO time.                   ║
+ ║  So you can ask the same question about any past moment.         ║
+ ╚═════════════════════════════╤════════════════════════════════════╝
+                               │  must obey
+ ╔═════════════════════════════▼════════════════════════════════════╗
+ ║  LAYER 1 — ONTOLOGY                        "the rules"           ║
+ ║                                                                  ║
+ ║  What kinds of things can exist.                                 ║
+ ║  Which links are allowed between which kinds.                    ║
+ ║  12 rules that RUN AS CODE and stop the build when broken.       ║
+ ╚═════════════════════════════╤════════════════════════════════════╝
+                               │  describes
+                               ▼
+                ┌──────────────────────────────────┐
+                │  RAW DATA                        │
+                │  Alibaba microservice traces     │
+                │  13,331,267 rows  /  1.43 GB CSV │
+                └──────────────────────────────────┘
+
+
+  THE SHORT VERSION OF EACH LAYER
+
+  ┌────────────────────┬──────────────────────┬─────────────────────────┐
+  │ LAYER              │ IN ONE SENTENCE      │ IF YOU SKIP IT          │
+  ├────────────────────┼──────────────────────┼─────────────────────────┤
+  │ 1  Ontology        │ The rules about what │ Bad data reaches the    │
+  │                    │ is allowed           │ chart, nobody notices   │
+  ├────────────────────┼──────────────────────┼─────────────────────────┤
+  │ 2  Knowledge graph │ The things and the   │ You cannot ask "what    │
+  │                    │ links, with time     │ did it look like then"  │
+  ├────────────────────┼──────────────────────┼─────────────────────────┤
+  │ 3a Semantic layer  │ Every number defined │ Three teams quote three │
+  │                    │ once                 │ different latencies     │
+  ├────────────────────┼──────────────────────┼─────────────────────────┤
+  │ 3b Semantic search │ Find the right       │ The AI invents an       │
+  │                    │ document             │ answer                  │
+  ├────────────────────┼──────────────────────┼─────────────────────────┤
+  │ 4  Context layer   │ Pack it all, with a  │ The AI gets too much    │
+  │                    │ size limit           │ and still gets it wrong │
+  └────────────────────┴──────────────────────┴─────────────────────────┘
+
+
+
+================================================================================
+  3.  WHAT THE GRAPH ACTUALLY LOOKS LIKE
+================================================================================
+
+  This is the shape of layer 2.  Boxes are KINDS OF THINGS (classes).
+  Arrows are KINDS OF LINKS (relations).  There are 17 of each in total.
+  The main ones are drawn here.
+
+
+   PEOPLE AND THE OUTSIDE WORLD
+   ────────────────────────────────────────────────────────────────────
+
+        ┌───────────────┐                        ┌────────────┐
+        │ ExternalActor │                        │    Team    │
+        │  (real user)  │                        │  (guessed) │
+        └───────┬───────┘                        └──────┬─────┘
+                │ enters                                │ owns
+                │                                       │
+   SOFTWARE     │                                       │
+   ─────────────┼───────────────────────────────────────┼────────────
+                ▼                                       ▼
+        ┌───────────────────────────────────────────────────┐
+        │                  Microservice                     │◀───┐
+        │                  (MS_5261 ...)                    │    │
+        └───┬──────────┬───────────┬───────────┬────────────┘    │
+            │          │           │           │                 │
+    exposes │    reads │    writes │    writes │            calls│
+            ▼          ▼           ▼           ▼                 │
+     ┌───────────┐ ┌─────────┐ ┌─────────┐ ┌──────────────┐      │
+     │ Interface │ │Datastore│ │Datastore│ │ MessageQueue │      │
+     └───────────┘ └─────────┘ └─────────┘ └──────────────┘      │
+                                                                 │
+        ┌─────────┐      entry_point                             │
+        │  Trace  ├──────────────────────────────────────────────┘
+        └─────────┘
+
+
+   MACHINES
+   ────────────────────────────────────────────────────────────────────
+
+     ┌───────────┐  instance_of   ┌──────────────┐
+     │ Container ├───────────────▶│ Microservice │
+     └─────┬─────┘                └──────────────┘
+           │
+           │ runs_on      <<< this link carries a TIME WINDOW
+           ▼
+       ┌────────┐   in_cluster    ┌─────────┐
+       │  Node  ├────────────────▶│ Cluster │
+       └────────┘                 └─────────┘
+
+
+   WRITING  (text from outside the trace)
+   ────────────────────────────────────────────────────────────────────
+
+     ┌──────────┐    ┌────────────┐
+     │ Runbook  │    │ Postmortem │
+     └────┬─────┘    └──────┬─────┘
+          └─────────┬───────┘
+                    ▼
+            ┌─────────────┐  turned into numbers  ┌─────────────┐
+            │  DocChunk   ├──────────────────────▶│  384 nums   │
+            │ (paragraph) │     (an embedding)    │  per chunk  │
+            └─────────────┘                       └─────────────┘
+
+
+  EVERY THING AND EVERY LINK ALSO CARRIES WHERE IT CAME FROM
+
+      measured   read straight from the data file.  It is a fact.
+      derived    we worked it out ourselves.  It is a good guess.
+      external   came from text outside the trace.
+
+  This tag travels with the fact all the way to the final answer.
+  So the reader always knows what is solid and what is inferred.
+
+
+
+================================================================================
+  4.  WHY TIME ON EVERY LINK MATTERS
+================================================================================
+
+  This is the single best thing to demo.  Every link stores a FROM time
+  and a TO time, so the whole graph can be rewound to any moment.
+
+
+      time ──────────────────────────────────────────────────────▶
+             00:00         00:01         00:02         00:03
+
+      C_1 runs_on NODE_A  [====================]
+
+      C_1 runs_on NODE_B                        [=================]
+
+
+      Question: "Where is C_1 at 00:01:30?"      Answer: NODE_A
+      Question: "Where is C_1 at 00:02:30?"      Answer: NODE_B
+
+
+  Same question.  Different moment.  Different correct answer.
+
+  ALREADY PROVEN ON THE REAL DATA:
+  blast radius for one node returns 2,591 services at 00:01:00
+  and 2,055 services at 00:02:30, in about 0.1 seconds.
+  The system genuinely changed in between, and the graph knows it.
+
+
+
+================================================================================
+  5.  HOW DATA MOVES THROUGH THE SYSTEM
+================================================================================
+
+  ┌─────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
+  │ 1 FETCH │─▶│ 2 LOAD   │─▶│ 3 CHECK  │─▶│ 4 BUILD  │─▶│ 5 SERVE  │
+  └────┬────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘
+       │            │             │             │             │
+       ▼            ▼             ▼             ▼             ▼
+  Download     Read the      Run the 12    Make the      API, charts,
+  the .tar.gz  CSV.  Put     rules.        graph.        search and
+  files from   bad rows in   Count every   Work out      the agent.
+  the net.     a SIDE        break.        time windows.
+  Resumable.   TABLE —       Stop only     Work out
+               do NOT        on serious    teams.
+               drop them.    breaks.       Build metrics.
+
+   ~2 GB        72.8M rows    12 rules      1.27M things   0.1 sec
+   on disk      staged        checked       1.52M links    answers
+
+
+  STEP 2 IS WHERE MOST PROJECTS QUIETLY LOSE DATA.
+  1,089 rows in every file are broken.  A normal bulk load either
+  crashes on them or silently throws them away.  We keep them in a side
+  table with the line number and the reason.  They become a number we
+  can report, not a silent loss.
+
+  STEP 3 IS THE ONE PEOPLE SKIP.
+  It is also the one that found four real bugs in our own code.
+  See section 10.
+
+
+
+================================================================================
+  6.  THE FOUR ARMS OF THE EXPERIMENT
+================================================================================
+
+  Same data.  Same five questions.  Four different stacks.
+  This is the R&D.
+
+
+                ┌───────────────────────────────────────┐
+                │   ONE DATASET,  ONE SET OF QUESTIONS  │
+                │   (this never changes)                │
+                └───────────────────┬───────────────────┘
+                                    │
+        ┌───────────────┬───────────┴───────┬───────────────┐
+        ▼               ▼                   ▼               ▼
+   ┌─────────┐    ┌───────────┐       ┌───────────┐   ┌───────────┐
+   │  ARM A  │    │   ARM B   │       │   ARM C   │   │   ARM D   │
+   │         │    │           │       │           │   │           │
+   │DATABRICKS    │ SNOWFLAKE │       │FREE TOOLS │   │ NO TOOLS  │
+   │         │    │           │       │           │   │  (hand)   │
+   │  PAID   │    │   PAID    │       │   FREE    │   │   FREE    │
+   └────┬────┘    └─────┬─────┘       └─────┬─────┘   └─────┬─────┘
+        │               │                   │               │
+        └───────────────┴─────────┬─────────┴───────────────┘
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │   T H E   C O M P A R I S O N │
+                  │                               │
+                  │   speed, cost, effort,        │
+                  │   lock-in, where it breaks    │
+                  └───────────────────────────────┘
+
+
+  ARM D ALREADY EXISTS AND WORKS.  It is the control group — the honest
+  baseline.  When a tool beats it, we can say by how much.  When a tool
+  adds nothing, we can prove that too.
+
+
+
+================================================================================
+  7.  TOOLS FOR EVERY LAYER, IN EVERY ARM
+================================================================================
+
+  This is the heart of the research.  [DONE] = already built and running.
+
+
+  ┌─ LAYER 1 — ONTOLOGY  (the rules) ──────────────────────────────────┐
+  │                                                                    │
+  │  Databricks   Unity Catalog — tags, keys, lineage.                 │
+  │               Lakeflow / DLT "expectations" are the rules.         │
+  │                                                                    │
+  │  Snowflake    Horizon Catalog.                                     │
+  │               "Data Metric Functions" are the rules.               │
+  │                                                                    │
+  │  Free tools   SHACL + RDF  (rdflib, pySHACL)                       │
+  │               The real world standard.  Protege to draw it.        │
+  │                                                                    │
+  │  No tools     ontology.yaml + SQL shape queries          [DONE]    │
+  └────────────────────────────────────────────────────────────────────┘
+
+  ┌─ LAYER 2 — KNOWLEDGE GRAPH  (what connects to what) ───────────────┐
+  │                                                                    │
+  │  Databricks   Delta tables + GraphFrames on Spark.                 │
+  │               NOT a graph database.                                │
+  │                                                                    │
+  │  Snowflake    Plain tables + recursive SQL.                        │
+  │               NO graph engine at all.                              │
+  │                                                                    │
+  │  Free tools   Neo4j Community — a real graph database,             │
+  │               Cypher language, free, GPLv3, Windows ZIP.           │
+  │                                                                    │
+  │  No tools     nodes / edges tables + recursive SQL       [DONE]    │
+  └────────────────────────────────────────────────────────────────────┘
+
+  ┌─ LAYER 3a — SEMANTIC LAYER  (one meaning per number) ──────────────┐
+  │                                                                    │
+  │  Databricks   Unity Catalog Metric Views — YAML + SQL              │
+  │  Snowflake    Semantic Views — SQL                                 │
+  │  Free tools   dbt-core + MetricFlow  (Apache 2.0)                  │
+  │  No tools     metrics.yaml + compile.py                  [DONE]    │
+  └────────────────────────────────────────────────────────────────────┘
+
+  ┌─ LAYER 3b — SEMANTIC SEARCH  (find the right text) ────────────────┐
+  │                                                                    │
+  │  Databricks   Mosaic AI Vector Search   (billed per hour)          │
+  │  Snowflake    Cortex Search + native VECTOR type                   │
+  │  Free tools   Qdrant or LanceDB + fastembed (BGE model, CPU only)  │
+  │  No tools     plain array + cosine + BM25 + rank fusion            │
+  └────────────────────────────────────────────────────────────────────┘
+
+  ┌─ LAYER 4 — CONTEXT LAYER  (pack the answer) ───────────────────────┐
+  │                                                                    │
+  │  Databricks   Mosaic AI Agent Framework, Genie                     │
+  │  Snowflake    Cortex Agents, Snowflake Intelligence                │
+  │  Free tools   FastAPI + MCP + Ollama  (free AI model, runs local)  │
+  │  No tools     assemble.py, budget.py, mcp_server.py                │
+  └────────────────────────────────────────────────────────────────────┘
+
+  ┌─ CHARTS AND PICTURES ──────────────────────────────────────────────┐
+  │                                                                    │
+  │  Databricks   AI/BI Dashboards, notebooks                          │
+  │  Snowflake    Snowsight, Streamlit in Snowflake                    │
+  │  Free tools   Grafana + Streamlit + Cytoscape.js                   │
+  │  No tools     Cytoscape.js with a time slider                      │
+  └────────────────────────────────────────────────────────────────────┘
+
+  ┌─ LICENCE COST ─────────────────────────────────────────────────────┐
+  │                                                                    │
+  │  Databricks   per DBU, per hour                                    │
+  │  Snowflake    per credit                                           │
+  │  Free tools   0                                                    │
+  │  No tools     0                                                    │
+  └────────────────────────────────────────────────────────────────────┘
+
+
+  WHAT THIS ALREADY TELLS US, BEFORE WRITING ANY CODE
+  ────────────────────────────────────────────────────────────────────
+
+  NEITHER DATABRICKS NOR SNOWFLAKE IS A GRAPH DATABASE.
+  Both do layer 2 by putting rows in a table and walking them with
+  Spark or SQL.
+
+  So the strongest point in our pitch is not "we are cheaper".  It is:
+
+        "For the graph layer, the FREE tool is the BETTER tool."
+
+  Neo4j is in the plan to prove, or disprove, exactly that.
+
+
+
+================================================================================
+  8.  THE FREE STACK WE WANT TO HAND OVER
+================================================================================
+
+  This is the thing a customer could actually install.
+  Nothing here costs money.  Nothing here needs Docker.
+
+
+ ┌──────────────────────────────────────────────────────────────────────┐
+ │  WHAT THE USER SEES                                                  │
+ │                                                                      │
+ │    ┌─────────────────────┐          ┌─────────────────────┐          │
+ │    │   Streamlit app     │          │      Grafana        │          │
+ │    │                     │          │                     │          │
+ │    │  - graph picture    │          │  - metric charts    │          │
+ │    │  - TIME SLIDER      │          │  - looks like the   │          │
+ │    │  - search box       │          │    paid dashboards  │          │
+ │    │  - agent answer     │          │                     │          │
+ │    └──────────┬──────────┘          └──────────┬──────────┘          │
+ └───────────────┼────────────────────────────────┼─────────────────────┘
+                 │                                │
+                 ▼                                ▼
+ ┌──────────────────────────────────────────────────────────────────────┐
+ │  THE BRAIN     FastAPI service  +  MCP server                        │
+ │                                                                      │
+ │     get_topology      get_blast_radius      get_metric               │
+ │     search_runbooks                     explain_incident             │
+ │                                                                      │
+ │     Every answer carries a timestamp, and measured / derived.        │
+ └────┬──────────────────┬──────────────────┬──────────────────┬────────┘
+      │                  │                  │                  │
+      ▼                  ▼                  ▼                  ▼
+ ┌──────────┐      ┌──────────┐      ┌──────────┐      ┌──────────┐
+ │  Neo4j   │      │  DuckDB  │      │  Qdrant  │      │  Ollama  │
+ │          │      │          │      │          │      │          │
+ │   the    │      │   the    │      │   the    │      │  the AI  │
+ │  graph   │      │ numbers  │      │   text   │      │  model   │
+ │          │      │          │      │  search  │      │ (local)  │
+ │   free   │      │   free   │      │   free   │      │   free   │
+ └────┬─────┘      └────┬─────┘      └────┬─────┘      └──────────┘
+      │                 │                 │
+      └─────────────────┴────────┬────────┘
+                                 │
+                   ┌─────────────────────────────┐
+                   │   THE RULES  (ontology)     │
+                   │   one YAML file             │
+                   │   checked before every      │
+                   │   single build              │
+                   └─────────────────────────────┘
+
+
+  TOTAL LICENCE COST:  ZERO.
+  No account.  No credit card.  No data leaves the machine.
+
+
+
+================================================================================
+  9.  HOW WE SCORE EACH ARM
+================================================================================
+
+  Every arm gets the same scorecard.  No opinions — numbers.
+
+  ┌──────────────────────┬───────────────────────────────────────────────┐
+  │ LOAD TIME            │ seconds to get the same rows in               │
+  ├──────────────────────┼───────────────────────────────────────────────┤
+  │ QUERY TIME           │ seconds to answer the same 5 questions        │
+  ├──────────────────────┼───────────────────────────────────────────────┤
+  │ MONEY                │ cost per hour at list price, versus 0         │
+  ├──────────────────────┼───────────────────────────────────────────────┤
+  │ EFFORT               │ lines of code and config we had to write      │
+  ├──────────────────────┼───────────────────────────────────────────────┤
+  │ WHAT IT DID FOR US   │ what the platform gave us free, versus what   │
+  │                      │ we still had to build by hand anyway          │
+  ├──────────────────────┼───────────────────────────────────────────────┤
+  │ INSTALL PAIN         │ account?  Docker?  admin?  Java?  card?       │
+  ├──────────────────────┼───────────────────────────────────────────────┤
+  │ LOCK-IN              │ can the definitions move somewhere else?      │
+  ├──────────────────────┼───────────────────────────────────────────────┤
+  │ WHERE IT BREAKS      │ the point at which each stack stops coping    │
+  └──────────────────────┴───────────────────────────────────────────────┘
+
+
+  THE FIVE QUESTIONS, ASKED IDENTICALLY IN ALL FOUR ARMS
+
+    1.  If NODE_12426 dies right now, which services are hit?
+        (blast radius)
+
+    2.  Where has container C_1 been running, and when did it move?
+        (placement history)
+
+    3.  Which services sit on the most critical paths?
+        (choke points)
+
+    4.  What was the p99 latency of MS_5261 in this minute?
+        (one metric)
+
+    5.  Why was MS_5261 slow at 00:02:30, and who should be paged?
+        (needs ALL FOUR LAYERS at once — this is the real test)
+
+
+
+================================================================================
+  10.  WHAT WE HAVE ALREADY FOUND  (ARM D)
+================================================================================
+
+  This is the part that justifies the R&D to a manager.
+  Every item below was found by A RULE FAILING, not by reading docs.
+
+
+  THE PUBLISHED DOCUMENTATION IS WRONG IN TWO PLACES
+  ────────────────────────────────────────────────────────────────────
+  It says one field appears only for certain call types.
+      -> Every single row has it.
+  It says some rows carry a negative response time.
+      -> There are zero.
+
+  Code written from the documentation would be silently wrong.
+
+
+  REAL FAULTS IN A WIDELY USED PUBLIC DATASET
+  ────────────────────────────────────────────────────────────────────
+
+     1,089      broken rows per file       one of them crashes a
+                                           normal bulk load
+
+     2,012,289  orphan rows  (15%)         only 43.3% of traces
+                                           have a root at all
+
+       188,643  response times written     read as 0, they drag
+                as the text "None"         every average down
+
+       255,067  rows where the ID          the name and the ID
+                contradicts its own name   disagree with each other
+
+
+  THE ONTOLOGY CAUGHT BUGS IN OUR OWN CODE
+  ────────────────────────────────────────────────────────────────────
+  34,594 links pointed at the wrong KIND of thing.
+  10,969 links pointed at IDs that were never created.
+
+  A walk through a broken link does not crash.  It just returns less
+  and looks perfectly healthy.  Only a declared rule finds it.
+
+
+  A HIDDEN IDENTITY BUG
+  ────────────────────────────────────────────────────────────────────
+  The default hash function gave 5,878 COLLISIONS in 921,622 keys.
+  Chance says about 1 in 20 million.  Container IDs share long
+  prefixes, which broke it.  Switching the hash: ZERO collisions.
+  A key constraint caught it.
+
+
+  THREE OF OUR OWN RULES WERE WRONG, AND MEASURING FIXED THEM
+  ────────────────────────────────────────────────────────────────────
+  One fired on 52% of all rows.  The RULE was wrong, not the data.
+  A rule that fires on half the data hides every real signal next
+  to it.
+
+
+
+================================================================================
+  11.  WHAT WE DELIBERATELY DID NOT BUILD
+================================================================================
+
+  Say this before anyone asks.  It is credibility, not a gap.
+
+
+  THERE IS NO ERROR RATE METRIC.
+  This data has no status codes, so an error rate cannot be worked out
+  from it.  Inventing one would be a fake number wearing a real name.
+  We use SLOW CALL RATE instead, with the threshold as a setting the
+  caller chooses, never hidden inside the definition.
+
+
+  TEAM OWNERSHIP IS A GUESS, NOT A FACT.
+  The data has no org chart.  We work teams out from the call pattern.
+  So every team is tagged "derived", and that tag shows up in the
+  final answer.
+
+
+
+================================================================================
+  12.  TOOL RESEARCH DONE SO FAR
+================================================================================
+
+  Done before planning.  These already changed the plan.
+
+
+  KUZU  (embedded graph database)
+      Archived October 2025 after Apple bought the company.
+      Forks exist (LadybugDB and others) but they are young.
+      -> Do not build on it.  Keep it as a risk story: free tools
+         can disappear.
+
+  CUBE CORE  (the best known free semantic layer)
+      Ships as Docker only.  No supported Windows install without it.
+      -> Ruled out by our no-Docker rule.  Use dbt + MetricFlow.
+
+  DUCKDB VECTOR EXTENSION
+      Still labelled experimental.  Saved indexes need an opt-in
+      experimental flag.  The docs say do not use in production.
+      -> Use Qdrant or LanceDB in the free arm.
+
+  DBT SEMANTIC LAYER
+      Free to WRITE metrics.  PAID to SERVE them to a BI tool or an
+      agent.  MetricFlow itself is Apache 2.0.
+      -> Name this trap in the report.  A buyer would miss it.
+
+  PYSHACL
+      The slowest SHACL engine in published comparisons, and it
+      scales badly with size.
+      -> Expect it to lose to SQL rules at 1.5M links.  Measuring
+         that is a RESULT, not a failure.
+
+  NEO4J COMMUNITY
+      GPLv3, free, ships a Windows ZIP, needs no Docker.
+      Limits: one database, no role based access, a slower query
+      runtime than the paid Enterprise edition.
+      -> Good fit.  State the limits plainly in the report.
+
+  FREE DATA CATALOGUES  (OpenMetadata, DataHub)
+      Nearly all assume Docker.
+      -> A finding in itself: "free" often quietly means
+         "free if you run Linux containers."
+
+
+
+================================================================================
+  13.  BUILD ORDER
+================================================================================
+
+  PHASE 0    FINISH ARM D                                    [1-2 days]
+  ───────    Fix the duplicate rows in critical_path.
+             Build semantic search (3b) and the context layer (4).
+             Build the Streamlit app with the time slider.
+             RESULT: one complete arm, end to end.  The control group.
+
+  PHASE 1    ARM C — FREE TOOLS                              [3-5 days]
+  ───────    Neo4j Community: load the same graph, write the same 5
+             questions in Cypher, time them against Arm D.
+             Qdrant: same chunks, same model, compare to hand-written.
+             dbt + MetricFlow: same metrics, compare to our compiler.
+             SHACL: same rules, measure how slow it really is.
+             Grafana: the dashboards.
+             RESULT: a free stack a customer could install today.
+
+  PHASE 2    ARM A — DATABRICKS                              [3-4 days]
+  ───────    Free Edition account.  Upload a smaller slice.
+             Unity Catalog + expectations, GraphFrames, Metric Views,
+             Vector Search, Genie, AI/BI dashboards.
+             Record every number.  Take screenshots.
+             RESULT: the paid reference, measured not guessed.
+
+  PHASE 3    ARM B — SNOWFLAKE                               [2-3 days]
+  ───────    30-day trial.  Must be done in ONE PUSH before it ends.
+             Horizon Catalog, Data Metric Functions, Semantic Views,
+             Cortex Search, Cortex Agents, Snowsight.
+
+  PHASE 4    THE WRITE-UP                                    [2 days]
+  ───────    Scorecard filled in for all four arms.
+             Cost model: real money per month, side by side.
+             Recommendation per situation.
+             A demo walking all four layers on the free stack.
+
+
+  Phases 1, 2 and 3 can be reordered.  Snowflake's expiring trial makes
+  it a scheduling problem more than a technical one — start that clock
+  only when there is time to finish it.
+
+
+
+================================================================================
+  14.  FILES AND FOLDERS
+================================================================================
+
+  D:\tushar\ontology\
+  │
+  ├─ ontology\       ontology.yaml, shapes.sql, validate.py     [DONE]
+  ├─ semantic\       metrics.yaml, compile.py                   [DONE]
+  ├─ ingest\         fetch.py, load.py, derive_teams.py         [DONE]
+  ├─ sql\duckdb\     schema, build, facts, queries, shapes      [DONE]
+  ├─ sql\postgres\   the same files, Postgres wording           [DONE]
+  ├─ db.py           one small layer so SQL can switch engine   [DONE]
+  │
+  ├─ search\         chunk.py, embed.py, hybrid.py            < phase 0
+  ├─ context\        api.py, assemble.py, budget.py, mcp.py   < phase 0
+  ├─ app\            streamlit_app.py                         < phase 0
+  │                  (graph + time slider + agent)
+  │
+  ├─ arms\
+  │   ├─ neo4j\        load.cypher, queries.cypher, timings   < phase 1
+  │   ├─ qdrant\       index.py, search.py, timings           < phase 1
+  │   ├─ metricflow\   dbt project, the same 18 metrics       < phase 1
+  │   ├─ shacl\        shapes.ttl, run.py, timings            < phase 1
+  │   ├─ databricks\   notebooks, DLT rules, screenshots      < phase 2
+  │   └─ snowflake\    .sql scripts, screenshots              < phase 3
+  │
+  └─ docs\
+      ├─ ARCHITECTURE.txt    this document
+      ├─ SCORECARD.md        the comparison, filled in
+      ├─ COST_MODEL.md       money, side by side
+      └─ FINDINGS\           one research note per layer
+
+
+  ONE RULE FOR EVERY ARM
+  ────────────────────────────────────────────────────────────────────
+  The ontology file and the metric file NEVER CHANGE.
+  Only the code around them changes.
+
+  That is what makes the comparison fair.  It is also the proof that
+  the definitions are portable, which is the whole argument against
+  lock-in.
+
+
+
+================================================================================
+  15.  HOW WE KNOW IT WORKED
+================================================================================
+
+  SAME ANSWERS EVERYWHERE
+      Blast radius for NODE_12426 must return the same service count
+      in all four arms.  A different count means one arm is wrong, and
+      finding out which is part of the work.
+
+  TIME TRAVEL PROVEN
+      The same query at two moments returns different, correct sets.
+      Already true in Arm D:  2,591 vs 2,055.
+
+  RULES ENFORCED
+      Serious rule breaks stop the build.
+      Already at zero in Arm D.
+
+  ONE METRIC, CHECKED THREE WAYS
+      SQL, API and agent must agree exactly.
+      Already true in Arm D for p99:  18361.0 all three ways.
+
+  SIZE LIMIT RESPECTED
+      Every answer bundle fits the token budget, and every fact in it
+      carries a timestamp and a measured / derived tag.
+
+  SCORECARD COMPLETE
+      Every box in section 9, filled in, for every arm.
+
+
+
+================================================================================
+  16.  RISKS
+================================================================================
+
+  ┌──────────────────────────────┬────────────────────────────────────────┐
+  │ RISK                         │ WHAT WE DO ABOUT IT                    │
+  ├──────────────────────────────┼────────────────────────────────────────┤
+  │ Four arms is a lot of work   │ Arm D already works.  If we stop after │
+  │                              │ Arm C we still have a complete free    │
+  │                              │ stack and a real comparison.           │
+  ├──────────────────────────────┼────────────────────────────────────────┤
+  │ Snowflake trial expires      │ Do Snowflake last, in one focused      │
+  │ in the middle of the build   │ push, scripts written in advance.      │
+  ├──────────────────────────────┼────────────────────────────────────────┤
+  │ A free tier limit blocks     │ Use a smaller slice in every arm so    │
+  │ one of the paid arms         │ the comparison stays fair, and report  │
+  │                              │ the limit itself as a finding.         │
+  ├──────────────────────────────┼────────────────────────────────────────┤
+  │ Neo4j Community is slower    │ Say so plainly.  An honest comparison  │
+  │ than the paid Enterprise     │ is worth more than a flattering one.   │
+  ├──────────────────────────────┼────────────────────────────────────────┤
+  │ A free tool dies, the way    │ Prefer tools with a long history and a │
+  │ Kuzu did                     │ real community.  Make this a section   │
+  │                              │ in the report — it is a genuine        │
+  │                              │ buying risk, not a detail.             │
+  ├──────────────────────────────┼────────────────────────────────────────┤
+  │ Someone reads a guess as a   │ The "derived" tag travels with every   │
+  │ fact                         │ fact into the final answer.            │
+  ├──────────────────────────────┼────────────────────────────────────────┤
+  │ The report reads like        │ Include the cases where PAYING is the  │
+  │ marketing                    │ right answer.  A comparison where free │
+  │                              │ wins everything convinces nobody.      │
+  └──────────────────────────────┴────────────────────────────────────────┘
+
+
+
+================================================================================
+  17.  STILL OPEN
+================================================================================
+
+  Decisions needed.  Each one changes the size of the work.
+
+    1.  Does SNOWFLAKE get a real build, or a documented one?
+        Its trial expires, so this is a scheduling choice as much as a
+        technical one.
+
+    2.  Is it OK to UPLOAD this public dataset to free cloud accounts?
+        This gates both paid arms.  The data is public, so there is no
+        confidentiality issue — but it is still a call to make.
+
+    3.  Should the free arm look like a PLATFORM (Neo4j, Grafana,
+        Qdrant — servers and ports) or like ONE APP (pip install and
+        run)?  They pitch very differently.
+        This document currently assumes the platform shape.
+
+    4.  Is there a DEADLINE, or a specific CUSTOMER, behind this?
+
+
+================================================================================
+                                 END
+================================================================================

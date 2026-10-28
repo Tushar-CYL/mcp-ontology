@@ -1,0 +1,381 @@
+# Observability Knowledge Graph - ontology
+# Source domain: Alibaba cluster-trace-microservices-v2022
+#
+# provenance is a first-class property of every class and relation:
+#   measured - read directly from a column in the trace release
+#   derived  - computed by us from measured data (inference, not fact)
+#   external - sourced from public text outside the trace
+# It is carried through the graph and into every context bundle, so a
+# consumer can always tell a measurement from an inference.
+#
+# Codes are explicit and STABLE. Never renumber: they are stored as
+# smallint in nodes.class / edges.rel across tens of millions of rows.
+
+version: "0.1.0"
+dataset: alibaba/cluster-trace-microservices-v2022
+
+enums:
+  rpctype: [rpc, http, db, mc, mq]
+  provenance: [measured, derived, external]
+  severity: [1, 2, 3]        # 1 = blocks the build, 2 = repair, 3 = record only
+
+classes:
+  # ---------- measured ----------
+  Cluster:
+    code: 1
+    provenance: measured
+    key: cluster_id
+    description: One of the 10+ production clusters the trace spans.
+  Node:
+    code: 2
+    provenance: measured
+    key: nodeid
+    props: [cpu_utilization, memory_utilization]
+    description: Bare-metal node. 40,000+ in the release.
+  Container:
+    code: 3
+    provenance: measured
+    key: msinstanceid
+    description: A running instance of a microservice. 470,000+ in the release.
+  Microservice:
+    code: 4
+    provenance: measured
+    key: msname
+    description: Stateless service identity. MSName covers stateless services only.
+  OnlineService:
+    code: 5
+    provenance: measured
+    key: service_id
+    description: Business-level service a call graph belongs to (CallGraph.service).
+  Interface:
+    code: 6
+    provenance: measured
+    key: "msname|interface"
+    description: An interface exposed by a downstream microservice. RPC and HTTP only.
+  Trace:
+    code: 7
+    provenance: measured
+    key: traceid
+    description: One call graph. 20M+ in the release.
+  Datastore:
+    code: 9
+    provenance: measured
+    key: store_id
+    description: Target of a DB or MC call. Appears as dm when rpctype is DB or MC.
+  ExternalActor:
+    code: 12
+    provenance: measured
+    key: actor_id
+    description: >
+      Traffic entering the system from outside it. The release uses a
+      single literal identity, USER, as the um of every root span: 1,055,701
+      rows. It is NOT a microservice - it runs on no container, owns no
+      interface and cannot fail - so classing it as one inflated fan_out to
+      1,425 and parked it upstream of almost everything in blast_radius.
+
+  MessageQueue:
+    code: 10
+    provenance: measured
+    key: mq_id
+    description: Message queue endpoint, from the MQ metric families in MSRTMCR.
+
+  # ---------- derived ----------
+  Team:
+    code: 22
+    provenance: derived
+    key: team_id
+    method: label-propagation community detection over the aggregated call graph
+    description: >
+      Ownership boundary inferred from real call structure. The trace carries
+      no ownership data. This is an inference and must never be presented as fact.
+  SLO:
+    code: 23
+    provenance: derived
+    key: slo_id
+    props: [target, metric, threshold, window]
+  Alert:
+    code: 24
+    provenance: derived
+    key: alert_id
+    method: burn-rate breach of a declared SLO over measured metrics
+  Incident:
+    code: 25
+    provenance: derived
+    key: incident_id
+    method: alerts clustered by time proximity and graph adjacency
+
+  # ---------- external ----------
+  Runbook:
+    code: 30
+    provenance: external
+    key: doc_id
+  Postmortem:
+    code: 31
+    provenance: external
+    key: doc_id
+  DocChunk:
+    code: 32
+    provenance: external
+    key: chunk_id
+
+# Temporal relations are reified BY INTERVAL: every row in `edges` carries
+# valid_from / valid_to, so an edge already has its own lifetime. A separate
+# Placement entity would add a node per interval and buy nothing - at this
+# row count and this memory budget, the interval-stamped edge IS the
+# reification.
+relations:
+  instance_of:
+    code: 1
+    domain: Container
+    range: Microservice
+    temporal: true
+    provenance: measured
+  runs_on:
+    code: 2
+    domain: Container
+    range: Node
+    temporal: true
+    provenance: measured
+    description: Container residency. Closes and reopens when the container migrates.
+  calls:
+    code: 3
+    domain: Microservice
+    range: Microservice
+    temporal: true
+    transitive: true
+    provenance: measured
+    props: [call_count, rt_p50, rt_p99, rpctype]
+    description: Aggregated per time window from CallGraph.
+  exposes:
+    code: 4
+    domain: Microservice
+    range: Interface
+    temporal: false
+    provenance: measured
+  entry_point:
+    code: 5
+    domain: OnlineService
+    range: Microservice
+    temporal: true
+    provenance: measured
+  reads:
+    code: 6
+    domain: Microservice
+    range: Datastore
+    temporal: true
+    provenance: measured
+  writes:
+    code: 7
+    domain: Microservice
+    range: Datastore
+    temporal: true
+    provenance: measured
+  produces_to:
+    code: 8
+    domain: Microservice
+    range: MessageQueue
+    temporal: true
+    provenance: measured
+  consumes_from:
+    code: 9
+    domain: Microservice
+    range: MessageQueue
+    temporal: true
+    provenance: measured
+  owns:
+    code: 10
+    domain: Team
+    range: Microservice
+    temporal: true
+    provenance: derived
+  enters:
+    code: 17
+    domain: ExternalActor
+    range: Microservice
+    temporal: true
+    provenance: measured
+    description: >
+      External traffic arriving at its first internal service. Separate
+      from `calls` so that service-to-service topology stays free of a
+      pseudo-node that would otherwise dominate every centrality measure.
+
+  in_cluster:
+    code: 11
+    domain: Node
+    range: Cluster
+    temporal: false
+    provenance: measured
+  fires_on:
+    code: 12
+    domain: Alert
+    range: [Microservice, Node]
+    temporal: true
+    provenance: derived
+  includes:
+    code: 13
+    domain: Incident
+    range: Alert
+    temporal: false
+    provenance: derived
+  defined_on:
+    code: 14
+    domain: SLO
+    range: [Microservice, Interface]
+    temporal: false
+    provenance: derived
+  applies_to:
+    code: 15
+    domain: Runbook
+    range: [Microservice, Alert]
+    temporal: false
+    provenance: external
+  chunk_of:
+    code: 16
+    domain: DocChunk
+    range: [Runbook, Postmortem]
+    temporal: false
+    provenance: external
+
+# Rules are executable. Each has a check in ontology/shapes/<id>.sql that
+# returns the offending rows. The validator runs them against staging and
+# writes every violation to validation_findings.
+#
+# These are expected to FIRE on this dataset. ICPE 2024 (SPEC p276) showed
+# v2022 carries real topological inconsistencies and that tools following
+# the published spec silently ignore them. Catching them is the point.
+rules:
+  - id: call_has_parent
+    severity: 2
+    applies_to: Call
+    repair: reparent_to_synthetic_root
+    description: >
+      Every non-root call has exactly one parent in the same trace, found by
+      trimming the last dotted segment of rpcid (0.1.1 -> 0.1).
+      Catches orphan spans.
+  - id: trace_acyclic
+    severity: 2
+    applies_to: Trace
+    repair: drop_back_edge_and_flag
+    description: The call tree within a single trace must be acyclic.
+  # These two look similar and are deliberately separate, because they mean
+  # opposite things. placement_conflict is the SOURCE contradicting itself,
+  # which we repair and count. single_placement is OUR derivation being
+  # wrong, which must stop the build. Collapsing them into one rule would
+  # let a real bug hide behind known-bad input.
+  - id: placement_conflict
+    severity: 2
+    applies_to: runs_on
+    repair: lowest_nodeid_wins
+    description: >
+      The source reports one container on more than one node at the SAME
+      instant - e.g. MS_6945_POD_9729 appears on NODE_31027 and NODE_21388
+      at every timestamp it is sampled. A container cannot be in two places,
+      so this is a duplicate identity in the release, not a migration.
+      Measured at 60 container-instants out of 13,984,914 (0.0004%).
+      Repair: the lowest nodeid wins, deterministically, and the conflict is
+      recorded rather than averaged away.
+
+  - id: single_placement
+    severity: 1
+    applies_to: runs_on
+    repair: none
+    description: >
+      After repair, a container has at most one runs_on interval covering
+      any instant. Overlapping derived intervals mean the gaps-and-islands
+      deriver is wrong, not the data - hence severity 1.
+  # Originally written as "interface is non-null IFF rpctype is rpc or
+  # http", straight from the published spec. Measured against the data that
+  # rule flagged 6,948,782 rows - 52% of the slice - which is the signature
+  # of a wrong rule, not a broken dataset. Every row in v2022 carries an
+  # interface, including db, mc and mq calls. The spec claim is false here,
+  # so the rule now asserts what is actually true and checkable; the
+  # contradiction itself is recorded in this comment rather than drowning
+  # the report in half the corpus.
+  - id: interface_present
+    severity: 3
+    applies_to: Call
+    repair: keep_and_flag
+    description: >
+      interface is populated on every call. NOTE: the published spec states
+      it appears for remote invocation (rpc/http) only. That is not true of
+      this release - mc, db and mq calls carry one too - so a consumer must
+      not infer the communication paradigm from the presence of interface.
+  - id: rt_sign
+    severity: 3
+    applies_to: Call
+    repair: keep_and_flag
+    description: >
+      rt >= 0, except the downstream side of an RPC pair, which the spec
+      says is negative. MEASURED: zero negative values in the slice, so
+      that convention does not appear in v2022 at all. The rule is kept
+      because it costs nothing and would catch the convention returning.
+
+  - id: rt_parseable
+    severity: 3
+    applies_to: Call
+    repair: null_and_count
+    description: >
+      rt must parse as a number. 188,643 rows (1.4%) hold the literal
+      string "None" - a Python None serialised into the CSV by whatever
+      produced the release. They become NULL rather than 0: a missing
+      measurement is not a fast one, and averaging them in as zero would
+      silently drag every latency metric down.
+  - id: msname_present
+    severity: 2
+    applies_to: Microservice
+    repair: drop
+    description: >
+      msname must not be a placeholder. MEASURED: this release uses two,
+      UNKNOWN (2,334,998 rows) and UNAVAILABLE (494,564). Neither is
+      documented. A third non-MS_ value, USER, is NOT a placeholder - it is
+      a real external actor and gets its own class.
+  # The most basic check an ontology exists to make, and it was missing
+  # from the first draft. Without it the graph quietly contained 34,594
+  # `calls` edges pointing at a Datastore - which the ontology declares as
+  # Microservice -> Microservice - and 10,969 pointing at node ids that
+  # were never created at all. Neither a query nor a constraint would have
+  # surfaced either: the traversals just silently returned less.
+  #
+  # Severity 1: a declared relation whose endpoints are the wrong class, or
+  # do not exist, means the builder is wrong, not the source.
+  - id: edge_endpoints_typed
+    severity: 1
+    applies_to: edges
+    repair: none
+    description: >
+      Every edge must reference nodes that exist, and their classes must
+      satisfy the domain and range declared for that relation in this file.
+      This is the check that makes the registry binding rather than
+      documentation.
+
+  - id: container_has_microservice
+    severity: 2
+    applies_to: Container
+    repair: drop
+    description: Every container resolves to exactly one microservice.
+  - id: every_ms_has_team
+    severity: 2
+    applies_to: Microservice
+    repair: assign_singleton_team
+    description: >
+      Every microservice has exactly one owning team. Completeness check on the
+      derived ownership layer, not on the source data.
+  # Written as severity 1 ("closure must terminate within the depth cap"),
+  # on the assumption that a non-terminating closure meant runaway
+  # recursion. Measured: 5,897 of 36,888 microservices (16%) still reach new
+  # services at depth 12. That is not a bug - a production call graph is
+  # dense and cyclic, and no cap will exhaust it. The recursion is bounded
+  # by the cap regardless, so nothing can run away.
+  #
+  # The real consequence is a caveat, not a failure: for those services
+  # blast_radius at a given cap is a LOWER BOUND on what is affected. That
+  # has to reach whoever reads the number, so it is reported, not hidden.
+  - id: closure_truncated_at_cap
+    severity: 3
+    applies_to: calls
+    repair: report_as_lower_bound
+    description: >
+      Microservices whose transitive `calls` closure is still expanding at
+      the depth cap. For these, blast_radius under-reports: the result is a
+      lower bound on impact, and the context layer must say so rather than
+      present it as the complete set.

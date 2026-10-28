@@ -1,0 +1,647 @@
+================================================================================
+
+                        T H E   S T O R Y   P L A N
+
+              What we are trying to do, told as a story first
+
+================================================================================
+
+  ############################################################################
+  #                                                                          #
+  #   OUT OF DATE IN ONE IMPORTANT WAY - READ THIS FIRST                     #
+  #                                                                          #
+  #   The incident in PART 2 ("the node ran out of CPU, so the service       #
+  #   got slow") WAS TESTED AGAINST THE DATA AND DOES NOT HOLD.              #
+  #                                                                          #
+  #   Measured on NODE_35351, the most saturated node in the slice:          #
+  #                                                                          #
+  #       minute   service p99   node CPU                                    #
+  #       00:03     100.40 ms      (no sample)                               #
+  #       00:05      93.00 ms      (no sample)                               #
+  #       00:06     102.00 ms      0.9753                                    #
+  #       00:07     101.68 ms      0.9764                                    #
+  #       00:08      98.41 ms      0.9969   <- node at 99.7%, LATENCY LOWER  #
+  #                                                                          #
+  #   Latency sits at 95-102 ms whatever the CPU does. There is no           #
+  #   correlation. Telling that story would mean inventing it.               #
+  #                                                                          #
+  #   WHAT REPLACES IT - better, and real:                                   #
+  #                                                                          #
+  #     critical_path found a service calling the same downstream 42 times   #
+  #     inside ONE trace (MS_42321 -> MS_5913). That is a textbook N+1       #
+  #     problem - a query running in a loop. No dashboard shows it; you      #
+  #     need the call graph. It is a bug an engineer would genuinely want    #
+  #     to find, and it is actionable.                                       #
+  #                                                                          #
+  #   Also: every number below was measured on a 3-MINUTE slice. The slice   #
+  #   is now 9 minutes. Re-run `python verify.py` before quoting any of      #
+  #   them. Blast radius (2,591 / 2,055) is confirmed unchanged.             #
+  #                                                                          #
+  #   PART 7 of this document predicted exactly this outcome and said to     #
+  #   change the story rather than fake the number. That is what happened.   #
+  #                                                                          #
+  ############################################################################
+
+  Read this BEFORE any more code is written.
+
+  The story decides what we build.  If a feature does not appear in the
+  story, we probably do not need it yet.  If the story needs something
+  we have not built, that is the next task.
+
+  Project  : D:\tushar\ontology
+  Written  : 2026-10-28
+  Pairs with : ARCHITECTURE.txt  (the how)
+               This file         (the why, and the what it feels like)
+
+
+--------------------------------------------------------------------------------
+  CONTENTS
+--------------------------------------------------------------------------------
+
+   PART 1   The problem, as a story
+   PART 2   The one scene we demo
+   PART 3   Peeling it back — which layer did what
+   PART 4   The three moments that land
+   PART 5   The story we tell the manager
+   PART 6   The demo script, minute by minute
+   PART 7   What is real today, and what we still have to find
+   PART 8   What could go wrong in the demo
+   PART 9   What this story tells us to build next
+
+
+
+================================================================================
+  PART 1   THE PROBLEM, AS A STORY
+================================================================================
+
+  THE CHARACTERS
+
+    PRIYA     an on-call engineer.  Competent.  Tired.  It is 3am.
+    THE BOSS  wants to know why it took 40 minutes to find the cause.
+    THE AGENT the AI assistant we are building.
+
+
+  SCENE:  3:04 AM.  A PAGE FIRES.
+
+  Something called MS_5261 is slow.  Priya has never heard of MS_5261.
+  There are thousands of services.
+
+  Here is what happens TODAY, without any of this:
+
+
+    3:04   Priya opens the dashboard.  MS_5261 is red.  So are
+           forty other things.  Which one is the cause and which
+           ones are just downstream?  The dashboard cannot say.
+           It shows numbers, not connections.
+
+    3:11   She opens the tracing tool.  She can see one slow
+           request.  She cannot see the shape of the whole system.
+
+    3:19   She asks in chat: "does anyone know what MS_5261 talks
+           to?"  Nobody answers.  It is 3am.
+
+    3:26   She finds a wiki page.  It was last edited 14 months
+           ago.  Two of the services on it no longer exist.
+
+    3:33   She guesses that the problem is the node underneath,
+           and she is right.  But she cannot prove it, and she
+           does not know who owns the service, so she pages the
+           wrong team.
+
+    3:44   Forty minutes gone.  The actual fix takes four.
+
+
+  WHY IT TOOK 40 MINUTES
+
+  Not because Priya is slow.  Because the information she needed was
+  split across four places that do not know about each other:
+
+        the dashboard knows NUMBERS but not CONNECTIONS
+        the tracing tool knows ONE REQUEST but not the SYSTEM
+        the wiki knows WORDS but they are OUT OF DATE
+        nothing at all knows WHO OWNS WHAT
+
+  And crucially:  nothing could tell her what the system looked like
+  AT 3:04.  Everything shows her what it looks like NOW, at 3:33,
+  after things have already moved.
+
+  That last one is the real killer.  By the time you look, the evidence
+  has changed.
+
+
+  THAT IS THE PROBLEM.  All four layers exist to fix one scene.
+
+
+
+================================================================================
+  PART 2   THE ONE SCENE WE DEMO
+================================================================================
+
+  Same page.  Same 3:04 AM.  This time the stack exists.
+
+  Priya types one question:
+
+
+      ┌──────────────────────────────────────────────────────────┐
+      │                                                          │
+      │   "Why was MS_5261 slow at 00:02:30,                     │
+      │    and who should I page?"                               │
+      │                                                          │
+      └──────────────────────────────────────────────────────────┘
+
+
+  Four seconds later she gets this back.  Note every single line
+  carries a TIME and a TAG saying whether we measured it or guessed it.
+
+
+      ┌──────────────────────────────────────────────────────────┐
+      │ ANSWER                                                   │
+      │                                                          │
+      │ MS_5261 was slow because the node underneath it ran      │
+      │ out of CPU.                                              │
+      │                                                          │
+      │ THE EVIDENCE                                             │
+      │                                                          │
+      │  - At 00:02:30, MS_5261 ran on NODE_12426.               │
+      │       measured   from the resource samples               │
+      │                                                          │
+      │  - NODE_12426 CPU was at 0.97 at that minute, up from    │
+      │    0.41 a minute earlier.                                │
+      │       measured   node_cpu_saturation                     │
+      │                                                          │
+      │  - 2,055 other services depend on something running on   │
+      │    that node, directly or indirectly.                    │
+      │       derived    blast radius, walked at 00:02:30        │
+      │                                                          │
+      │  - MS_5261 p99 latency went from <X> ms to 18,361 ms     │
+      │    in the same minute.                                   │
+      │       measured   rt_p99                                  │
+      │                                                          │
+      │  - 14 other services on the same node slowed at the      │
+      │    same moment.  They are symptoms, not causes.          │
+      │       derived    same node, same minute                  │
+      │                                                          │
+      │ WHO TO PAGE                                              │
+      │                                                          │
+      │  - Team_07 owns MS_5261.                                 │
+      │       DERIVED — we worked this out from the call         │
+      │       pattern.  There is no org chart in this data.      │
+      │       Treat it as a strong hint, not a fact.             │
+      │                                                          │
+      │ SIMILAR THING THAT HAPPENED BEFORE                       │
+      │                                                          │
+      │  - "CPU saturation on a shared node caused cascading     │
+      │    latency across co-located services"                   │
+      │       external   public post-mortem, matched 0.83        │
+      │                                                          │
+      └──────────────────────────────────────────────────────────┘
+
+
+  Elapsed: four seconds.  Not forty minutes.
+
+  And notice what the answer does NOT do.  It does not say
+  "Team_07 owns this."  It says "we worked that out, here is how,
+  do not fully trust it."  That is the difference between a tool an
+  engineer trusts at 3am and one they stop using after it lies once.
+
+
+
+================================================================================
+  PART 3   PEELING IT BACK — WHICH LAYER DID WHAT
+================================================================================
+
+  Now we show the manager the same answer again, but with the covers
+  off.  Each line of the answer came from a different layer.
+
+
+   THE QUESTION
+        │
+        │  "Why was MS_5261 slow at 00:02:30, and who do I page?"
+        ▼
+   ┌─────────────────────────────────────────────────────────────┐
+   │ LAYER 4   CONTEXT                                           │
+   │           Splits the question into parts.                   │
+   │           Decides what to ask for.                          │
+   │           Later: throws away whatever does not fit.         │
+   └──┬───────────────┬────────────────┬────────────────┬────────┘
+      │               │                │                │
+      ▼               ▼                ▼                ▼
+   ┌────────┐   ┌──────────┐   ┌─────────────┐   ┌─────────────┐
+   │LAYER 2 │   │ LAYER 3a │   │  LAYER 3b   │   │  LAYER 2    │
+   │ GRAPH  │   │ METRICS  │   │   SEARCH    │   │  GRAPH      │
+   │        │   │          │   │             │   │  again      │
+   │Where   │   │What was  │   │Has this     │   │Who owns     │
+   │was it  │   │the CPU   │   │happened     │   │MS_5261?     │
+   │running │   │and the   │   │before?      │   │             │
+   │AT THAT │   │latency   │   │             │   │             │
+   │MOMENT? │   │THEN?     │   │             │   │             │
+   └───┬────┘   └────┬─────┘   └──────┬──────┘   └──────┬──────┘
+       │             │                │                 │
+       │ NODE_12426  │ cpu 0.97       │ one matching    │ Team_07
+       │ 2,055 deps  │ p99 18,361ms   │ post-mortem     │ (derived)
+       │             │                │                 │
+       └─────────────┴────────┬───────┴─────────────────┘
+                              ▼
+   ┌─────────────────────────────────────────────────────────────┐
+   │ LAYER 4   CONTEXT, again                                    │
+   │           Puts it in order.  Cuts it to the token budget.   │
+   │           Stamps every line measured / derived / external.  │
+   └──────────────────────────┬──────────────────────────────────┘
+                              ▼
+                        THE ANSWER
+
+   And underneath all of it, invisible but holding it up:
+
+   ┌─────────────────────────────────────────────────────────────┐
+   │ LAYER 1   ONTOLOGY                                          │
+   │                                                             │
+   │  Every link the graph walked was checked before the build.  │
+   │  If a link pointed at the wrong kind of thing, the build    │
+   │  would have REFUSED TO FINISH.                              │
+   │                                                             │
+   │  This layer produced none of the answer.                    │
+   │  It is the reason the answer can be trusted.                │
+   └─────────────────────────────────────────────────────────────┘
+
+
+  THE SENTENCE TO SAY OUT LOUD HERE
+
+      "Layer 1 contributed nothing to that answer.
+       It is the reason the answer is not wrong."
+
+  That is the hardest layer to sell and the easiest to cut.
+  So we sell it with a demo, not with a slide — see PART 4, beat 2.
+
+
+
+================================================================================
+  PART 4   THE THREE MOMENTS THAT LAND
+================================================================================
+
+  A demo is remembered for about three things.  These are ours.
+
+
+  ──────────────────────────────────────────────────────────────────
+  BEAT 1    MOVE THE SLIDER.  THE ANSWER CHANGES.
+  ──────────────────────────────────────────────────────────────────
+
+  Show the graph picture.  Ask for the blast radius of NODE_12426.
+
+      At 00:01:00  ->  2,591 services affected
+      At 00:02:30  ->  2,055 services affected
+
+  Drag the time slider between the two.  The picture visibly redraws.
+
+  Then say:
+
+      "Both of those are correct.  The system changed in between.
+       Your current dashboard can only ever show you NOW.
+       At 3am, NOW is already the wrong answer."
+
+  WHY THIS LANDS:  everyone in the room has lost time to this exact
+  problem.  Nobody has ever seen a tool fix it.
+
+
+  ──────────────────────────────────────────────────────────────────
+  BEAT 2    BREAK A RULE ON PURPOSE.  WATCH THE BUILD REFUSE.
+  ──────────────────────────────────────────────────────────────────
+
+  Open the ontology file in front of them.  It is readable YAML,
+  not code.  Point at one line:
+
+      a "calls" link must go from a Microservice to a Microservice
+
+  Now deliberately make the builder produce one bad link — a service
+  "calling" a database.  Run the build.
+
+  It stops.  It prints the rule that failed, the count, and five
+  example rows.
+
+  Then say:
+
+      "That is one line of a config file refusing to let bad data
+       through.  Without it, that link would still be in the graph.
+       Nothing would crash.  Every query would just quietly return
+       slightly the wrong answer, forever."
+
+  Then land the real number:
+
+      "This is not hypothetical.  When we turned these rules on, they
+       found 34,594 links pointing at the wrong kind of thing, and
+       10,969 pointing at IDs that never existed.  In OUR OWN CODE.
+       No query would have shown us that."
+
+  WHY THIS LANDS:  it turns the most abstract layer into the most
+  concrete one.  People stop asking what an ontology is for.
+
+
+  ──────────────────────────────────────────────────────────────────
+  BEAT 3    THE SAME SCREEN.  THE BILL IS ZERO.
+  ──────────────────────────────────────────────────────────────────
+
+  Last.  Put the two side by side — the paid platform and ours,
+  answering the same question with the same data.
+
+  Then show the bill.
+
+      Paid platform    $<X> per month, running this workload
+      Our free stack   $0
+
+      No account.  No credit card.  No data leaving the building.
+
+  And then, immediately, the honest part:
+
+      "Here is where paying is still the right answer: <list it>."
+
+  WHY THAT LAST LINE MATTERS:  a comparison where free wins everything
+  reads like a sales deck and gets discounted.  One that names its own
+  limits gets believed.  We give up the perfect score on purpose,
+  because it buys us the credibility of everything else.
+
+
+
+================================================================================
+  PART 5   THE STORY WE TELL THE MANAGER
+================================================================================
+
+  Three acts.  About four minutes if spoken.
+
+
+  ACT 1 — SOMEONE ALREADY SOLVED THIS, FOR MONEY
+  ──────────────────────────────────────────────────────────────────
+
+      "There is a version of this built inside Databricks.  All four
+       layers, plus the charts.  It works.  We are not claiming it
+       does not.
+
+       It also bills by the hour, and the definitions live inside
+       that platform.  Move off it and you rewrite them."
+
+
+  ACT 2 — SO WE BUILT IT FOUR TIMES
+  ──────────────────────────────────────────────────────────────────
+
+      "We did not build one alternative and declare victory.
+       We built the same four layers four times, on the same 13
+       million rows, answering the same five questions:
+
+            once in Databricks        (the paid reference)
+            once in Snowflake         (the other paid option)
+            once with free tools      (Neo4j, Qdrant, Grafana)
+            once with nothing at all  (just SQL and Python)
+
+       That last one is the control group.  It is how we can say
+       what each platform ACTUALLY gave us, instead of what its
+       marketing page says it gives us."
+
+
+  ACT 3 — HERE IS WHAT WE LEARNED
+  ──────────────────────────────────────────────────────────────────
+
+      "Three things.
+
+       One.  Neither Databricks nor Snowflake is a graph database.
+       Both of them do the graph layer by putting rows in a table
+       and walking them.  For that one layer, the free tool is not
+       the cheap option — it is the better option.
+
+       Two.  Free often has an asterisk.  dbt's metric layer is free
+       to write and paid to serve.  Most free catalogues need Docker.
+       One embedded graph database we looked at was bought by Apple
+       and archived last year.  We can tell a customer exactly where
+       those traps are, because we walked into them.
+
+       Three.  The definitions are portable and the platforms are not.
+       The same ontology file and the same metric file drove all four
+       builds, unchanged.  That is the actual product."
+
+
+  THE ONE LINE, IF THERE IS ONLY TIME FOR ONE
+
+      "We can give a customer all four layers, on their own machine,
+       for nothing — and we have the measurements to prove it is not
+       a toy."
+
+
+
+================================================================================
+  PART 6   THE DEMO SCRIPT, MINUTE BY MINUTE
+================================================================================
+
+  Total: 10 minutes.  Rehearse it.  Do not improvise the numbers.
+
+
+   0:00  THE PAIN
+         Tell the 3am story from PART 1.  Do not show a screen yet.
+         Just talk.  Thirty seconds.  Get everyone into the scene.
+
+   0:30  THE QUESTION
+         Show the app.  Type the question.  Let it run on screen.
+         Do not narrate while it runs.  Silence is fine.
+
+   0:40  THE ANSWER
+         Read two lines of it out loud.  Point at the word
+         "derived" and say what it means.  Nothing else yet.
+
+   1:30  BEAT 1 — THE SLIDER
+         Drag the time slider.  2,591 becomes 2,055.
+         Say the "NOW is already the wrong answer" line.
+
+   3:00  PEEL IT BACK
+         Show the PART 3 diagram.  Walk each arrow in one sentence.
+         End on layer 1 and the "contributed nothing / reason it is
+         not wrong" line.
+
+   4:30  BEAT 2 — BREAK A RULE
+         Open the YAML.  Break the link.  Run the build.
+         Let it fail on screen.  Then give the 34,594 number.
+
+   6:30  THE FOUR ARMS
+         One slide.  The diagram from ARCHITECTURE section 6.
+         "Same data.  Same five questions.  Four stacks."
+
+   7:30  THE SCORECARD
+         The filled-in table.  Let them read it.  Stay quiet.
+
+   8:30  BEAT 3 — THE BILL
+         The cost comparison.  Then immediately the "here is where
+         paying still wins" list.
+
+   9:30  WHAT WE WANT
+         Say plainly what you are asking for — more time, a customer
+         to pilot with, a decision.  Do not end on a summary.
+         End on a request.
+
+
+  RULES FOR THE DEMO
+
+    - Never say "as you can see".  If they can see it, say nothing.
+    - Never apologise for what is missing.  State it flatly or
+      leave it out.
+    - If something breaks, say "that is the live system, not a
+      recording" and move on.  Do not debug in front of them.
+    - Every number you say out loud must be in the scorecard.
+      If it is not measured, do not say it.
+
+
+
+================================================================================
+  PART 7   WHAT IS REAL TODAY, AND WHAT WE STILL HAVE TO FIND
+================================================================================
+
+  Be strict about this.  The story above is written as if it all works.
+  Some of it does not yet.  Marking the gap is how we avoid demoing a
+  number we invented.
+
+
+  ALREADY MEASURED AND TRUE
+  ──────────────────────────────────────────────────────────────────
+
+    blast radius NODE_12426 at 00:01:00   =  2,591 services
+    blast radius NODE_12426 at 00:02:30   =  2,055 services
+    query time                            =  about 0.1 seconds
+    rt_p99 for MS_5261                    =  18,361 ms
+    the same p99 two independent ways     =  identical
+    rows in the graph                     =  1.27M things, 1.52M links
+    build time                            =  76 seconds
+    bad links the rules caught            =  34,594 + 10,969
+    hash collisions found and fixed       =  5,878 -> 0
+    serious rule breaks now               =  zero
+
+
+  STILL TO FIND — THESE ARE REAL TASKS, NOT WRITING
+  ──────────────────────────────────────────────────────────────────
+
+    [ ] A node that genuinely saturates, with services on it that
+        genuinely slow down at the same minute.
+        The whole story needs ONE real example.  If NODE_12426 does
+        not have a real CPU spike, we find the node that does and we
+        rewrite the story around it.  WE DO NOT FAKE IT.
+
+    [ ] The "before" latency number for MS_5261.
+        Marked <X> in PART 2.  Must be measured.
+
+    [ ] The 14 co-located services that slowed together.
+        Must be counted, not estimated.
+
+    [ ] The matching post-mortem, and its real similarity score.
+        Needs layer 3b built first.
+
+    [ ] The team that owns MS_5261.
+        Needs the derived teams checked against the actual graph.
+
+    [ ] The monthly cost of the paid platform at this workload.
+        Needs the Databricks arm actually run.  List price alone
+        is not good enough to put on a slide.
+
+    [ ] The list of cases where paying IS the right answer.
+        We cannot write this honestly until all four arms are done.
+
+
+  THE RULE:  every <X> and every empty bracket above must be filled
+  with a measured number before this story is told to anyone outside
+  the team.
+
+
+
+================================================================================
+  PART 8   WHAT COULD GO WRONG IN THE DEMO
+================================================================================
+
+  ┌────────────────────────────────┬──────────────────────────────────┐
+  │ WHAT GOES WRONG                │ WHAT WE DO                       │
+  ├────────────────────────────────┼──────────────────────────────────┤
+  │ "Is this real data or a demo   │ Say it first, before they ask.   │
+  │  dataset you made up?"         │ It is a published Alibaba        │
+  │                                │ production trace.  13 million    │
+  │                                │ rows.  We did not clean it.      │
+  ├────────────────────────────────┼──────────────────────────────────┤
+  │ "Our data is not microservice  │ The ontology file is the only    │
+  │  traces."                      │ thing that is domain specific.   │
+  │                                │ Everything else is unchanged.    │
+  │                                │ Have a second tiny ontology      │
+  │                                │ ready to show that.              │
+  ├────────────────────────────────┼──────────────────────────────────┤
+  │ "Why not just use Databricks,  │ Agree.  Then show where it costs │
+  │  we already pay for it."       │ and where it has no graph.       │
+  │                                │ Do not argue the budget.         │
+  ├────────────────────────────────┼──────────────────────────────────┤
+  │ "Neo4j Community is GPL, legal │ True and worth taking seriously. │
+  │  will block it."               │ Have the embedded, no-server     │
+  │                                │ version ready as the fallback.   │
+  │                                │ This is a real reason to build   │
+  │                                │ both shapes.                     │
+  ├────────────────────────────────┼──────────────────────────────────┤
+  │ The agent gives a vague or     │ Rehearsed question only.  And    │
+  │ wrong answer live              │ the answer is assembled from     │
+  │                                │ queries, not generated, so the   │
+  │                                │ facts cannot drift — say that.   │
+  ├────────────────────────────────┼──────────────────────────────────┤
+  │ Someone asks for a number we   │ "I do not have that measured."   │
+  │ never measured                 │ Never estimate out loud.  One    │
+  │                                │ invented number loses the room.  │
+  └────────────────────────────────┴──────────────────────────────────┘
+
+
+
+================================================================================
+  PART 9   WHAT THIS STORY TELLS US TO BUILD NEXT
+================================================================================
+
+  Work backwards from the story.  Anything the story needs, we build.
+  Anything it does not need, we postpone.
+
+
+  THE STORY NEEDS                              THE TASK
+  ──────────────────────────────────────────────────────────────────
+
+  A real saturated node with real          Find it.  Query the node
+  victims                                  metrics for a genuine CPU
+                                           spike and the services on
+                                           that node in that minute.
+                                           EVERYTHING ELSE DEPENDS ON
+                                           THIS.  Do it first.
+
+  "Has this happened before?"              Layer 3b.  Corpus, chunks,
+                                           embeddings, hybrid search.
+
+  The assembled answer with tags           Layer 4.  assemble.py,
+  and a size limit                         budget.py, the API.
+
+  The slider, the picture, the             The Streamlit app.
+  typed question
+
+  A clean critical path                    Fix the duplicate rows bug
+                                           in critical_path.
+
+  Three more arms to compare against       Phases 1, 2, 3.
+
+  A filled-in scorecard and a real         Phase 4.
+  cost number
+
+
+  THE ORDER, BECAUSE OF THE STORY
+
+      1.  Find the real incident.      <-- changed by this document
+      2.  Fix critical_path.
+      3.  Layer 3b, search.
+      4.  Layer 4, the context API.
+      5.  The app with the slider.
+      6.  Then, and only then, the other three arms.
+
+
+  WHAT CHANGED BECAUSE WE WROTE THE STORY FIRST
+
+  Before this, step 1 was "fix critical_path".  Writing the story
+  showed that the whole demo rests on one real incident that we have
+  not actually found yet.  If no node in this 3-minute slice has a
+  genuine saturation spike with genuine victims, we need a different
+  slice — and that is a much cheaper thing to discover now than
+  three weeks from now with the app already built around it.
+
+  That is what a story plan is for.
+
+
+================================================================================
+                                 END
+================================================================================
