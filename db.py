@@ -28,11 +28,19 @@ import time
 from pathlib import Path
 from typing import Any, Sequence
 
+from common import DOMAIN, DOMAIN_DIR  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent
 ENGINE = os.environ.get("OKG_ENGINE", "duckdb").lower()
-DUCKDB_PATH = Path(os.environ.get("OKG_DUCKDB", ROOT / "data" / "okg.duckdb"))
+
+# One database per domain. Class codes come from the domain's ontology, so
+# Microservice=4 in one and Route=4 in another would collide inside a shared
+# `nodes` table and nothing would warn you.
+DUCKDB_PATH = Path(os.environ.get("OKG_DUCKDB",
+                                  ROOT / "data" / f"{DOMAIN}.duckdb"))
 PG_DSN = os.environ.get(
-    "OKG_DSN", "host=localhost port=5432 dbname=okg user=okg password=okg")
+    "OKG_DSN",
+    f"host=localhost port=5432 dbname=okg_{DOMAIN} user=okg password=okg")
 
 # Split a .sql file on semicolons that end a statement. Good enough because
 # our SQL files never contain a semicolon inside a string literal or a
@@ -134,6 +142,16 @@ class Database:
                 print(f"  {time.monotonic() - t0:7.2f}s  {label}")
 
     def sql_dir(self) -> Path:
+        """Where this domain's SQL lives: staging, build, facts, queries, shapes."""
+        return DOMAIN_DIR / "sql" / self.engine
+
+    def core_sql_dir(self) -> Path:
+        """Where the SHARED SQL lives: nodes, edges, registries, validation.
+
+        Identical for every domain. If something needs to move from here into
+        a domain folder, that is a finding about the architecture, not a
+        detail - it means the core was not as general as claimed.
+        """
         return ROOT / "sql" / self.engine
 
 

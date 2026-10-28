@@ -379,3 +379,16 @@ rules:
       the depth cap. For these, blast_radius under-reports: the result is a
       lower bound on impact, and the context layer must say so rather than
       present it as the complete set.
+
+# How show.py draws this domain. See domains/flights/ontology.yaml for the
+# same block describing a completely different dataset on the same engine.
+display:
+  focus_class: Microservice
+  focus_relation: calls
+  upstream_label: who calls
+  downstream_label: what it calls
+  owner_relation: owns
+  place_via: null                 # containers reach nodes via instance_of
+  default_as_of: "2022-01-01 00:01:00"
+  alt_as_of: "2022-01-01 00:02:30"
+  example: null                   # picked automatically

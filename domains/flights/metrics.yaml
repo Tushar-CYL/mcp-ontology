@@ -1,0 +1,193 @@
+# Flights domain - semantic layer. Every metric defined ONCE.
+#
+# The API, the notebooks, the dashboard and the agent all compile their SQL
+# from this file. Three consumers each computing "delay" slightly differently
+# is the problem this layer exists to remove.
+#
+# Worth comparing against the other domain, which has NO error_rate because
+# its source carries no status codes. This one DOES have cancel_rate, because
+# BTS records a cancellation flag on every flight. The difference is not a
+# preference - it is what each dataset can actually support, and the metric
+# catalogue is where that gets decided once instead of being argued about
+# per dashboard.
+
+version: "0.1.0"
+
+sources:
+  flights:
+    table: flights
+    time: fdate
+    dimensions:
+      carrier:  carrier
+      origin:   origin
+      dest:     dest
+      aircraft: aircraft
+    # `refs` marks dimensions whose stored value is a node id. The compiler
+    # translates a human name ('JFK') through node_id(), so no caller ever
+    # handles an internal id.
+    refs:
+      carrier:  Airline
+      origin:   Airport
+      dest:     Airport
+      aircraft: Aircraft
+
+parameters:
+  late_minutes:
+    default: 15
+    description: >
+      Minutes late at the gate before a flight counts as delayed. 15 is the
+      US DOT definition, which is why it is the default - but it is exposed
+      as a parameter so a caller always knows which threshold they asked for.
+
+metrics:
+
+  # ------------------------------------------------------------- punctuality
+  - name: arr_delay_p50
+    title: Median arrival delay
+    unit: minutes
+    provenance: measured
+    source: flights
+    expr: "quantile_cont(arr_delay, 0.5)"
+    filter: "NOT cancelled AND arr_delay IS NOT NULL"
+    notes: >
+      Negative means early, and most flights are. A median of -6 is normal,
+      not a bug: airlines pad schedules. Anyone reading this as "6 minutes
+      late" has the sign backwards.
+
+  - name: arr_delay_p99
+    title: 99th percentile arrival delay
+    unit: minutes
+    provenance: measured
+    source: flights
+    expr: "quantile_cont(arr_delay, 0.99)"
+    filter: "NOT cancelled AND arr_delay IS NOT NULL"
+
+  - name: dep_delay_p50
+    title: Median departure delay
+    unit: minutes
+    provenance: measured
+    source: flights
+    expr: "quantile_cont(dep_delay, 0.5)"
+    filter: "NOT cancelled AND dep_delay IS NOT NULL"
+
+  - name: worst_delay
+    title: Latest single arrival
+    unit: minutes
+    provenance: measured
+    source: flights
+    expr: "max(arr_delay)"
+    filter: "NOT cancelled"
+
+  - name: on_time_rate
+    title: Share arriving within the threshold
+    unit: ratio
+    provenance: measured
+    source: flights
+    expr: "avg(CASE WHEN arr_delay <= {late_minutes} THEN 1.0 ELSE 0.0 END)"
+    filter: "NOT cancelled AND arr_delay IS NOT NULL"
+    notes: >
+      Cancelled flights are EXCLUDED, matching the official definition. That
+      makes the number flattering during a storm - an airline that cancels
+      everything has a perfect on-time rate - so it should always be read
+      next to cancel_rate, never alone.
+
+  # ---------------------------------------------------------------- failure
+  - name: cancel_rate
+    title: Share of flights cancelled
+    unit: ratio
+    provenance: measured
+    source: flights
+    expr: "avg(CASE WHEN cancelled THEN 1.0 ELSE 0.0 END)"
+    notes: >
+      This domain CAN support a failure rate, where the microservice domain
+      cannot. The difference is in the data, not in the modelling.
+
+  - name: divert_rate
+    title: Share of flights diverted
+    unit: ratio
+    provenance: measured
+    source: flights
+    expr: "avg(CASE WHEN diverted THEN 1.0 ELSE 0.0 END)"
+
+  - name: weather_cancel_share
+    title: Share of cancellations blamed on weather
+    unit: ratio
+    provenance: measured
+    source: flights
+    expr: "avg(CASE WHEN cancel_code = 'B' THEN 1.0 ELSE 0.0 END)"
+    filter: "cancelled"
+    notes: >
+      Codes are A carrier, B weather, C national airspace system,
+      D security. Some cancelled flights carry no code at all - see the
+      cancelled_has_code rule - and those count as not-weather here, so
+      treat this as a lower bound.
+
+  # ----------------------------------------------------------------- volume
+  - name: flight_count
+    title: Flights scheduled
+    unit: flights
+    provenance: measured
+    source: flights
+    expr: "count(*)"
+
+  - name: distinct_aircraft
+    title: Distinct aeroplanes used
+    unit: aircraft
+    provenance: measured
+    source: flights
+    expr: "count(DISTINCT aircraft)"
+
+  - name: avg_distance
+    title: Average distance flown
+    unit: miles
+    provenance: measured
+    source: flights
+    expr: "avg(distance)"
+    filter: "NOT cancelled"
+
+  - name: air_time_p50
+    title: Median time in the air
+    unit: minutes
+    provenance: measured
+    source: flights
+    expr: "quantile_cont(air_time, 0.5)"
+    filter: "NOT cancelled AND air_time IS NOT NULL"
+
+# Graph metrics carry their own SQL: they are not aggregates over a fact
+# table, so the generic compiler cannot express them - but they belong in
+# this catalogue all the same, because they are numbers people quote and
+# must mean one thing. {as_of} and {limit} are substituted by the compiler.
+graph_metrics:
+
+  - name: destinations_served
+    title: Distinct airports reachable without changing plane
+    unit: airports
+    provenance: derived
+    sql: |
+      SELECT n.nkey AS airport, count(DISTINCT e.dst) AS value
+      FROM edges e JOIN nodes n ON n.id = e.src
+      WHERE e.rel = rel_code('flies_to')
+        AND valid_at(e.valid_from, e.valid_to, {as_of})
+      GROUP BY n.nkey ORDER BY value DESC LIMIT {limit}
+
+  - name: arrivals_from
+    title: Distinct airports with an inbound flight
+    unit: airports
+    provenance: derived
+    sql: |
+      SELECT n.nkey AS airport, count(DISTINCT e.src) AS value
+      FROM edges e JOIN nodes n ON n.id = e.dst
+      WHERE e.rel = rel_code('flies_to')
+        AND valid_at(e.valid_from, e.valid_to, {as_of})
+      GROUP BY n.nkey ORDER BY value DESC LIMIT {limit}
+
+  - name: carriers_present
+    title: Carriers operating from an airport
+    unit: carriers
+    provenance: derived
+    sql: |
+      SELECT ap.nkey AS airport, count(DISTINCT e.src) AS value
+      FROM edges e JOIN nodes ap ON ap.id = e.dst
+      WHERE e.rel = rel_code('serves')
+        AND valid_at(e.valid_from, e.valid_to, {as_of})
+      GROUP BY ap.nkey ORDER BY value DESC LIMIT {limit}

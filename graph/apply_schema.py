@@ -5,7 +5,7 @@ every row of the graph can be traced back to a versioned class or relation,
 and so a rename in the YAML cannot silently diverge from what is stored.
 
 Engine comes from OKG_ENGINE (duckdb | postgres); the SQL is read from
-sql/<engine>/schema.sql. Everything in this file is engine-agnostic.
+sql/<engine>/core.sql plus domains/<domain>/sql/<engine>/staging.sql.
 
 Usage:
     python graph/apply_schema.py
@@ -20,17 +20,24 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import as_list, load_ontology, ontology_sha  # noqa: E402
+from common import DOMAIN, as_list, load_ontology, ontology_sha  # noqa: E402
 from db import connect  # noqa: E402
 
-DROP_TABLES = [
-    "validation_findings", "validation_run", "ingest_log",
-    "node_alias", "edges", "nodes", "calls",
-    "stg_callgraph", "stg_msmetrics", "stg_nodemetrics", "stg_msrtmcr",
-    "node_metrics", "ms_metrics", "ms_rt_mcr",
-    "rule_registry", "relation_registry", "class_registry",
-    "ontology_version", "meta",
-]
+def user_tables(db) -> list[str]:
+    """Every table in this database, discovered rather than listed.
+
+    An earlier version hard-coded the table names, which meant --reset
+    silently left a second domain's tables standing - and a stale staging
+    table that nothing rebuilds is worse than one that was never created,
+    because every later query still finds it. Each domain has its own
+    database file, so dropping everything here is correct.
+    """
+    if db.engine == "duckdb":
+        return [r[0] for r in db.query(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'main' AND table_type = 'BASE TABLE'")]
+    return [r[0] for r in db.query(
+        "SELECT tablename FROM pg_tables WHERE schemaname = 'public'")]
 
 
 def main() -> int:
@@ -45,14 +52,25 @@ def main() -> int:
 
     with connect() as db:
         if args.reset:
-            print("resetting schema (dropping all objects)")
-            for t in DROP_TABLES:
-                db.execute(f"DROP TABLE IF EXISTS {t} CASCADE")
+            tables = user_tables(db)
+            print(f"resetting schema for domain {DOMAIN!r} "
+                  f"({len(tables)} table(s))")
+            for t in tables:
+                db.execute(f'DROP TABLE IF EXISTS "{t}" CASCADE')
             db.execute("DROP SEQUENCE IF EXISTS validation_run_seq")
 
-        schema = db.sql_dir() / "schema.sql"
-        db.script(schema)
-        print(f"applied {db.engine}/{schema.name}")
+        # Core first - nodes, edges, registries, validation, the macros every
+        # domain relies on - then this domain's staging tables. The order
+        # matters: staging is free to reference a core macro, never the
+        # reverse. If it ever needs to, the core was not general enough.
+        core = db.core_sql_dir() / "core.sql"
+        db.script(core)
+        print(f"applied {db.engine}/core.sql")
+
+        staging = db.sql_dir() / "staging.sql"
+        if staging.exists():
+            db.script(staging)
+            print(f"applied {DOMAIN}/{db.engine}/staging.sql")
 
         db.execute("DELETE FROM ontology_version WHERE version = ?", [ver])
         db.execute(
@@ -102,8 +120,15 @@ def main() -> int:
         a = db.one("SELECT node_id(4, 'checkout')")
         b = db.one("SELECT node_id(4, 'checkout')")
         assert a == b and a is not None, "node_id is not deterministic"
-        assert db.one("SELECT rel_code('calls')") == \
-            onto["relations"]["calls"]["code"], "rel_code lookup broken"
+        # Check a relation this domain actually declares. Naming one here
+        # ('calls') tied the shared driver to a single domain's vocabulary -
+        # the first thing the second domain tripped over.
+        probe = next(iter(onto["relations"]))
+        assert db.one("SELECT rel_code(?)", [probe]) == \
+            onto["relations"][probe]["code"], f"rel_code({probe}) broken"
+        probe_c = next(iter(onto["classes"]))
+        assert db.one("SELECT class_code(?)", [probe_c]) == \
+            onto["classes"][probe_c]["code"], f"class_code({probe_c}) broken"
         assert db.one("SELECT valid_at(TIMESTAMP '2022-01-01', NULL, "
                       "TIMESTAMP '2022-06-01')"), "valid_at broken"
 

@@ -1,5 +1,32 @@
 # SETUP
 
+## Two domains, one engine
+
+The same code runs on two completely different datasets. Only
+`domains/<name>/` changes — the engine, the validator, the metric compiler
+and `show.py` are identical for both.
+
+| Domain | Data | A node is | Good for |
+|---|---|---|---|
+| **flights** (default) | airports, airlines, 540k real flights | **JFK**, **LAX**, **AA** | understanding what each layer does — you can check the answers yourself |
+| **alibaba** | 39M microservice traces | `MS_45285`, `NODE_12426` | scale, and messier real-world defects |
+
+Switch with one variable:
+
+```powershell
+$env:OKG_DOMAIN = "flights"    # the default
+$env:OKG_DOMAIN = "alibaba"
+```
+
+Each gets its own database file, because class codes are per-ontology and
+would otherwise collide.
+
+**Start with `flights`.** `blast_radius('JFK')` means "if JFK closes, which
+airports lose a connection" — an answer you can sanity-check. The same query
+on `MS_45285` is correct but tells you nothing you can verify.
+
+---
+
 ## Quick start
 
 Open PowerShell in this folder and run **one command**:

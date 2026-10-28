@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import DOMAIN  # noqa: E402
 from db import connect  # noqa: E402
 
 W = 74
@@ -163,122 +164,134 @@ def layer_ontology(db) -> None:
 
 
 # ------------------------------------------------------------------ layer 2
-def pick_service(db) -> str:
-    """A service with traffic in both directions - a dull node teaches nothing."""
-    return db.one("""
-        SELECT n.nkey
-        FROM nodes n
-        WHERE n.class = class_code('Microservice')
-          AND EXISTS (SELECT 1 FROM edges e
-                      WHERE e.dst = n.id AND e.rel = rel_code('calls'))
-          AND EXISTS (SELECT 1 FROM edges e
-                      WHERE e.src = n.id AND e.rel = rel_code('calls'))
-        ORDER BY (SELECT count(*) FROM edges e
-                  WHERE e.src = n.id AND e.rel = rel_code('calls')) DESC
+def disp(db) -> dict:
+    """The domain's own vocabulary, from its ontology.
+
+    The engine must not know that one dataset is about microservices and
+    another about aeroplanes. Everything this function returns is read from
+    domains/<name>/ontology.yaml, which is what lets the same code draw
+    both.
+    """
+    from common import load_ontology
+    d = dict(load_ontology().get("display") or {})
+    d.setdefault("focus_class", "Microservice")
+    d.setdefault("focus_relation", "calls")
+    d.setdefault("upstream_label", "what points at")
+    d.setdefault("downstream_label", "what it points at")
+    return d
+
+
+def pick_focus(db, d: dict) -> str:
+    """A node with traffic in BOTH directions - a leaf teaches nothing."""
+    if d.get("example"):
+        return d["example"]
+    return db.one(f"""
+        SELECT n.nkey FROM nodes n
+        WHERE n.class = class_code('{d["focus_class"]}')
+          AND EXISTS (SELECT 1 FROM edges e WHERE e.dst = n.id
+                      AND e.rel = rel_code('{d["focus_relation"]}'))
+          AND EXISTS (SELECT 1 FROM edges e WHERE e.src = n.id
+                      AND e.rel = rel_code('{d["focus_relation"]}'))
+        ORDER BY (SELECT count(*) FROM edges e WHERE e.src = n.id
+                  AND e.rel = rel_code('{d["focus_relation"]}')) DESC
         LIMIT 1
     """)
 
 
-def layer_graph(db, svc: str, at: str) -> None:
+def layer_graph(db, focus: str, at: str, d: dict) -> None:
     banner("2", "KNOWLEDGE GRAPH", "the connections, drawn around one real node")
 
-    nid, cls = db.query("""
+    cls, rel = d["focus_class"], d["focus_relation"]
+    row = db.query(f"""
         SELECT n.id, c.name FROM nodes n
         JOIN class_registry c ON c.code = n.class
-        WHERE n.nkey = ? AND n.class = class_code('Microservice')
-    """, [svc])[0]
+        WHERE n.nkey = ? AND n.class = class_code('{cls}')
+    """, [focus])
+    if not row:
+        print(f"\nno {cls} called {focus!r}")
+        return
+    nid, cname = row[0]
 
-    print(f"\n  Focus: {svc}   as of {at}")
+    print(f"\nFocus: {focus}   as of {at}")
     print("  Every line below carries a time window. This is the graph AT")
     print("  THAT INSTANT, not a summary of everything that ever happened.\n")
 
-    up = db.query("""
+    up = db.query(f"""
         SELECT n.nkey, coalesce(e.weight, 0), coalesce(e.tag, '-')
         FROM edges e JOIN nodes n ON n.id = e.src
-        WHERE e.dst = ? AND e.rel = rel_code('calls')
+        WHERE e.dst = ? AND e.rel = rel_code('{rel}')
           AND valid_at(e.valid_from, e.valid_to, CAST(? AS TIMESTAMP))
         ORDER BY e.weight DESC NULLS LAST LIMIT 6
     """, [nid, at])
-    box(f"UPSTREAM - who calls {svc}",
-        [f"{k:<22} {w:>9,} calls   {t}" for k, w, t in up])
+    box(f"UPSTREAM - {d['upstream_label']} {focus}",
+        [f"{k:<22} {w:>9,}   {t}" for k, w, t in up])
 
     print(" " * 38 + V)
     print(" " * 38 + DOWN)
     inner = W - 8
     print("  " + DTL + DH * (W - 4) + DTR)
-    for ln in (f"{svc:<24} class: {cls}",
+    for ln in (f"{focus:<24} class: {cname}",
                f"id {nid:<21} provenance: measured"):
         print(f"  {DV}  {ln[:inner].ljust(inner)}  {DV}")
     print("  " + DBL + DH * (W - 4) + DBR)
     print(" " * 38 + V)
     print(" " * 38 + DOWN)
 
-    down = db.query("""
-        SELECT n.nkey, coalesce(e.weight, 0), coalesce(e.tag, '-'),
-               e.stat_p99
+    down = db.query(f"""
+        SELECT n.nkey, coalesce(e.weight, 0), coalesce(e.tag, '-'), e.stat_p99
         FROM edges e JOIN nodes n ON n.id = e.dst
-        WHERE e.src = ? AND e.rel = rel_code('calls')
+        WHERE e.src = ? AND e.rel = rel_code('{rel}')
           AND valid_at(e.valid_from, e.valid_to, CAST(? AS TIMESTAMP))
         ORDER BY e.weight DESC NULLS LAST LIMIT 6
     """, [nid, at])
-    box(f"DOWNSTREAM - what {svc} calls",
-        [f"{k:<22} {w:>9,} calls   {t:<6} p99 "
-         f"{('%.0f ms' % p) if p is not None else '-'}"
+    box(f"DOWNSTREAM - {d['downstream_label']} {focus}",
+        [f"{k:<22} {w:>9,}   {t:<8} p99 "
+         f"{('%.0f' % p) if p is not None else '-'}"
          for k, w, t, p in down])
 
-    other = db.query("""
+    other = db.query(f"""
         SELECT r.name, n.nkey
         FROM edges e
         JOIN relation_registry r ON r.code = e.rel
         JOIN nodes n ON n.id = e.dst
-        WHERE e.src = ? AND e.rel <> rel_code('calls')
+        WHERE e.src = ? AND e.rel <> rel_code('{rel}')
           AND valid_at(e.valid_from, e.valid_to, CAST(? AS TIMESTAMP))
         LIMIT 6
     """, [nid, at])
     if other:
-        box("OTHER THINGS IT TOUCHES",
-            [f"{rel:<14} {ARROW} {k}" for rel, k in other])
+        box("OTHER THINGS IT CONNECTS TO",
+            [f"{r:<14} {ARROW} {k}" for r, k in other])
 
-    place = db.query("""
-        SELECT ct.nkey, nd.nkey, e2.valid_from, e2.valid_to
-        FROM edges e1
-        JOIN nodes ct ON ct.id = e1.src
-        JOIN edges e2 ON e2.src = e1.src AND e2.rel = rel_code('runs_on')
-        JOIN nodes nd ON nd.id = e2.dst
-        WHERE e1.dst = ? AND e1.rel = rel_code('instance_of')
-          AND valid_at(e2.valid_from, e2.valid_to, CAST(? AS TIMESTAMP))
-        LIMIT 5
-    """, [nid, at])
-    box(f"WHERE IT RUNS   (container {ARROW} runs_on {ARROW} machine)",
-        [f"{c:<26} {ARROW} {nd:<12} {str(vf)[11:19]} .. "
-         f"{str(vt)[11:19] if vt else 'open'}" for c, nd, vf, vt in place]
-        or ["no container of this service reported its machine at this",
-            "instant. Only ~6,663 of the 17,656 services in the call graph",
-            "also appear in the resource data, so placement is often",
-            "unknown. Saying so beats inventing a machine."])
-
-    team = db.query("""
-        SELECT t.nkey FROM edges e JOIN nodes t ON t.id = e.src
-        WHERE e.dst = ? AND e.rel = rel_code('owns')
+    inbound = db.query(f"""
+        SELECT r.name, n.nkey, n.class
+        FROM edges e
+        JOIN relation_registry r ON r.code = e.rel
+        JOIN nodes n ON n.id = e.src
+        WHERE e.dst = ? AND e.rel <> rel_code('{rel}')
           AND valid_at(e.valid_from, e.valid_to, CAST(? AS TIMESTAMP))
+        LIMIT 6
     """, [nid, at])
-    box("WHO OWNS IT",
-        [f"{t[0]:<20}  DERIVED - inferred from the call pattern." for t in team]
-        + ["                      There is no org chart in this data."])
+    if inbound:
+        prov = db.query("SELECT name, provenance FROM relation_registry")
+        pmap = dict(prov)
+        box("WHAT POINTS AT IT",
+            [f"{k:<20} {ARROW} {r:<14} "
+             f"{'DERIVED - an inference' if pmap.get(r) == 'derived' else ''}"
+             for r, k, _ in inbound])
 
-    print("\n  SAME QUESTION, DIFFERENT MOMENT")
+    print("\nSAME QUESTION, DIFFERENT MOMENT")
     print("  This is what a time-stamped graph buys you, and what no")
     print("  dashboard can do: it can only ever show you NOW.\n")
-    for t in (DEFAULT_AT, "2022-01-01 00:02:30"):
-        n = db.one("""SELECT count(*) FROM edges
-                      WHERE src = ? AND rel = rel_code('calls')
-                        AND valid_at(valid_from, valid_to, CAST(? AS TIMESTAMP))""",
-                   [nid, t])
-        print(f"      at {t}   {svc} calls {n} services")
+    for t in (d.get("default_as_of", at), d.get("alt_as_of", at)):
+        n = db.one(f"""SELECT count(*) FROM edges
+                       WHERE src = ? AND rel = rel_code('{rel}')
+                         AND valid_at(valid_from, valid_to,
+                                      CAST(? AS TIMESTAMP))""", [nid, t])
+        print(f"      at {t:<22} {focus} connects to {n}")
 
 
 # ------------------------------------------------------------------ layer 3
-def layer_semantic(db, svc: str) -> None:
+def layer_semantic(db, svc: str, d: dict) -> None:
     banner("3", "SEMANTIC LAYER", "the numbers: one definition, one meaning")
 
     from semantic.compile import MetricCompiler
@@ -292,31 +305,54 @@ def layer_semantic(db, svc: str) -> None:
           for n in mc.names() for m in [mc.describe(n)]],
          [24, 11, 12, 14])
 
-    m = mc.describe("rt_p99")
-    print(f"\n  ONE METRIC, END TO END:  rt_p99   ({m['title']})\n")
+    # Trace whichever metric THIS domain leads with. Naming one here
+    # ('rt_p99') tied the shared tool to a single dataset's vocabulary, and
+    # the second domain found it immediately.
+    cls = d["focus_class"]
+    name = next((n for n in mc.names() if n in mc.metrics
+                 and cls in (mc.sources[mc.metrics[n]["source"]]
+                             .get("refs", {}).values())), None)
+    if not name:
+        box("no metric to trace",
+            [f"no metric in this domain is dimensioned by {cls}"])
+        return
+    m = mc.describe(name)
+    print(f"\n  ONE METRIC, END TO END:  {name}   ({m['title']})\n")
     box("1. WHAT YAML SAYS",
         [f"expr:   {m['expr']}", f"filter: {m.get('filter', '-')}",
          f"unit:   {m.get('unit')}        provenance: {m['provenance']}"])
 
-    sql, params = mc.sql("rt_p99", filters={"microservice": svc})
+    src = mc.sources[m["source"]]
+    dim = next(k for k, v in src.get("refs", {}).items() if v == cls)
+    sql, params = mc.sql(name, filters={dim: svc})
     box("2. THE SQL IT GENERATES", sql.splitlines() + [f"params: {params}"])
 
     val = db.query(sql, params)
+    got = val[0][0] if val else None
     box("3. THE ANSWER",
-        [f"rt_p99 for {svc} = {val[0][0]:,.1f} ms" if val and val[0][0] is not None
-         else f"rt_p99 for {svc} = no usable response times"])
+        [f"{name} for {svc} = {got:,.2f} {m.get('unit','')}"
+         if got is not None
+         else f"{name} for {svc} = no measurement (correctly NULL, not 0)"])
 
-    print("\n  WHAT IS DELIBERATELY MISSING")
-    box("no error_rate",
-        ["This dataset carries no status codes, so an error rate cannot",
-         "be computed from it. Defining one anyway would be a fabricated",
-         "number wearing a real metric's name.",
+    print("\n  WHAT THE CATALOGUE DECIDES ONCE")
+    box("what this dataset can and cannot support",
+        [f"{len(mc.metrics)} fact metrics, {len(mc.graph_metrics)} graph "
+         f"metrics, all defined in metrics.yaml.",
+         "",
+         "Compare the two domains: the flights data records a cancellation",
+         "flag on every row, so cancel_rate is real. The microservice data",
+         "has no status codes at all, so it has NO error_rate - inventing",
+         "one would be a fabricated number wearing a real metric's name.",
+         "That is a property of the data, decided here once, rather than",
+         "argued about per dashboard.",
+         "",
+         "(original note, microservice domain:)",
          "slow_call_rate is the honest substitute, with the threshold as",
          "an explicit parameter rather than hidden in the definition."])
 
 
 # ------------------------------------------------------------------ layer 4
-def layer_context(db, svc: str, at: str) -> None:
+def layer_context(db, svc: str, at: str, d: dict) -> None:
     banner("4", "CONTEXT LAYER", "the packed answer  -  NOT BUILT YET")
 
     print("\n  This layer assembles the three below into one small bundle an")
@@ -361,26 +397,32 @@ LAYERS = {"ontology": 1, "graph": 2, "semantic": 3, "context": 4}
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--service", help="microservice to focus on")
-    ap.add_argument("--at", default=DEFAULT_AT)
+    ap.add_argument("--service", help="node to focus on")
+    ap.add_argument("--at", help="timestamp; default comes from the domain")
     ap.add_argument("--layer", choices=list(LAYERS))
     args = ap.parse_args()
 
     want = {LAYERS[args.layer]} if args.layer else {1, 2, 3, 4}
 
     with connect(read_only=True) as db:
-        svc = args.service or pick_service(db)
+        d = disp(db)
+        svc = args.service or pick_focus(db, d)
+        at = args.at or d.get("default_as_of") or DEFAULT_AT
+        if not svc:
+            raise SystemExit(
+                f"no {d['focus_class']} has edges yet - build the graph first")
         if not db.one("SELECT count(*) FROM nodes WHERE nkey = ?", [svc]):
             raise SystemExit(f"no such node: {svc}")
 
+        print(f"\ndomain: {DOMAIN}")
         if 1 in want:
             layer_ontology(db)
         if 2 in want:
-            layer_graph(db, svc, args.at)
+            layer_graph(db, svc, at, d)
         if 3 in want:
-            layer_semantic(db, svc)
+            layer_semantic(db, svc, d)
         if 4 in want:
-            layer_context(db, svc, args.at)
+            layer_context(db, svc, at, d)
 
     print()
     print("=" * W)

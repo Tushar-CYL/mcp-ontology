@@ -1,0 +1,317 @@
+# Flights domain - ontology
+#
+# Sources:
+#   OpenFlights  airports.dat, airlines.dat, routes.dat   (the static network)
+#   BTS          On-Time Reporting Carrier Performance    (every real flight)
+#
+# This domain exists so the four layers can be understood by eye. In the
+# microservice domain a node is called MS_45285 and you cannot tell a right
+# answer from a wrong one. Here a node is called JFK, and "if JFK closes,
+# which cities become unreachable" is a question you can check yourself.
+#
+# The shape deliberately mirrors the other domain, because the engine is
+# shared and the queries should carry over:
+#
+#     Microservice -> Airport        the thing in the graph
+#     calls        -> flies_to       the time-stamped edge
+#     Node         -> Airline        who operates it
+#     Team         -> Region         derived by community detection
+#     calls table  -> flights table  one row per observed event
+#
+# provenance is a first-class property, same as the other domain:
+#   measured - read directly from a source file
+#   derived  - computed by us (inference, not fact)
+#   external - text sourced from outside the data
+#
+# Codes are explicit and STABLE. Never renumber: they are stored as
+# smallint in nodes.class / edges.rel across millions of rows.
+
+version: "0.1.0"
+dataset: openflights+bts-ontime
+
+enums:
+  provenance: [measured, derived, external]
+  severity: [1, 2, 3]        # 1 = blocks the build, 2 = repair, 3 = record only
+
+classes:
+  # ---------- measured ----------
+  Airport:
+    code: 1
+    provenance: measured
+    key: iata
+    props: [name, latitude, longitude, altitude, timezone]
+    description: >
+      An airport, keyed by its 3-letter IATA code (JFK, LHR, SIN).
+      OpenFlights lists ~7,700. Some have no IATA code at all - see the
+      airport_has_iata rule; they are real airports, not bad rows.
+
+  Airline:
+    code: 2
+    provenance: measured
+    key: carrier
+    props: [name, callsign, active]
+    description: >
+      A carrier, keyed by its IATA code (AA, BA, EK). OpenFlights lists
+      ~6,100 including long-defunct ones, which is why `active` matters.
+
+  City:
+    code: 3
+    provenance: measured
+    key: city
+    description: The city an airport serves. Not globally unique on its own.
+
+  Country:
+    code: 4
+    provenance: measured
+    key: country
+    description: Country name as written by the source. Spellings vary.
+
+  Aircraft:
+    code: 5
+    provenance: measured
+    key: tail_number
+    description: >
+      One physical aeroplane, keyed by registration (N104NN). From BTS
+      only - the route data has aircraft TYPES, which is a different thing
+      and deliberately not merged with this.
+
+  # ---------- derived ----------
+  Region:
+    code: 6
+    provenance: derived
+    key: region_id
+    description: >
+      A cluster of airports that fly to each other more than to the rest
+      of the network, found by community detection over the route graph.
+      This is an INFERENCE. It is not a continent, not a country, and not
+      an alliance - it is whatever the connection pattern suggests.
+
+  Disruption:
+    code: 7
+    provenance: derived
+    key: disruption_id
+    description: >
+      An airport-day where cancellations ran far above that airport's own
+      baseline. Derived from measured flights, never read from a source.
+
+  # ---------- external ----------
+  Advisory:
+    code: 8
+    provenance: external
+    key: advisory_id
+    description: Public text about an airport or airline, for the search layer.
+
+  DocChunk:
+    code: 9
+    provenance: external
+    key: chunk_id
+    description: A passage of an Advisory, with an embedding.
+
+relations:
+  # THE edge. Time-stamped, which is what makes the graph rewindable: the
+  # network on 3 January is not the network on 24 January, and both are
+  # correct.
+  flies_to:
+    code: 1
+    domain: [Airport]
+    range: [Airport]
+    temporal: true
+    provenance: measured
+    props: [flights, delay_p50, delay_p99, cancelled]
+    description: >
+      A scheduled connection from one airport to another, aggregated per
+      day. weight = flights flown, tag = operating carrier.
+
+  serves:
+    code: 2
+    domain: [Airline]
+    range: [Airport]
+    temporal: true
+    provenance: measured
+    description: This carrier operated at least one flight from this airport.
+
+  in_city:
+    code: 3
+    domain: [Airport]
+    range: [City]
+    temporal: false
+    provenance: measured
+    description: Which city the airport serves.
+
+  in_country:
+    code: 4
+    domain: [City]
+    range: [Country]
+    temporal: false
+    provenance: measured
+    description: Which country the city is in.
+
+  based_in:
+    code: 5
+    domain: [Airline]
+    range: [Country]
+    temporal: false
+    provenance: measured
+    description: The carrier's home country, as the source records it.
+
+  flown_by:
+    code: 6
+    domain: [Aircraft]
+    range: [Airline]
+    temporal: true
+    provenance: measured
+    description: >
+      Which carrier operated this airframe, over an interval. Aircraft do
+      move between carriers, so this is derived with the same
+      gaps-and-islands method the other domain uses for placement.
+
+  covers:
+    code: 7
+    domain: [Region]
+    range: [Airport]
+    temporal: true
+    provenance: derived
+    description: Airports grouped into a derived region. An inference.
+
+  disrupts:
+    code: 8
+    domain: [Disruption]
+    range: [Airport]
+    temporal: true
+    provenance: derived
+    description: Links a derived disruption to the airport it affected.
+
+  describes:
+    code: 9
+    domain: [Advisory]
+    range: [Airport, Airline]
+    temporal: false
+    provenance: external
+    description: What a piece of external text is about.
+
+  chunk_of:
+    code: 10
+    domain: [DocChunk]
+    range: [Advisory]
+    temporal: false
+    provenance: external
+    description: Which document a passage came from.
+
+# Rules run as SQL (see sql/<engine>/shapes.sql) and are counted exactly.
+# severity 1 fails the build: it means OUR BUILDER is broken.
+# severity 2 means the SOURCE DATA contradicts itself; we repair and report.
+# severity 3 is recorded, never fatal.
+rules:
+  - id: edge_endpoints_typed
+    severity: 1
+    applies_to: edges
+    repair: none
+    description: >
+      Every edge must point at nodes of the classes its relation declares.
+      This caught 34,594 wrongly-typed edges in the other domain. A
+      traversal through a mistyped edge does not crash - it just quietly
+      returns less - so only a declared rule finds it.
+
+  - id: route_endpoints_exist
+    severity: 1
+    applies_to: flies_to
+    repair: none
+    description: >
+      Both ends of a flies_to edge must be airports that exist in `nodes`.
+      A dangling id means our id minting disagrees with itself.
+
+  - id: single_region
+    severity: 1
+    applies_to: covers
+    repair: none
+    description: An airport may belong to at most one region at any instant.
+
+  - id: airport_has_iata
+    severity: 2
+    applies_to: Airport
+    repair: drop
+    description: >
+      OpenFlights writes \N for airports with no IATA code - mostly small
+      strips and heliports. They are real, but we key on IATA, so they
+      cannot enter the graph. Counted rather than silently skipped.
+
+  - id: no_self_route
+    severity: 2
+    applies_to: flies_to
+    repair: drop
+    description: >
+      An airport flying to itself. Present in the source; meaningless as a
+      connection and it inflates degree counts if left in.
+
+  - id: coordinates_valid
+    severity: 2
+    applies_to: Airport
+    repair: null_and_count
+    description: >
+      Latitude within -90..90 and longitude within -180..180. A bad
+      coordinate is invisible until someone draws a map.
+
+  - id: flight_airports_known
+    severity: 2
+    applies_to: flights
+    repair: keep_and_flag
+    description: >
+      A flown route whose origin or destination is not in the airport
+      list. BTS and OpenFlights are independent sources and do not agree
+      on every code; the disagreement is a measurement, not a bug.
+
+  - id: airline_resolvable
+    severity: 2
+    applies_to: flights
+    repair: keep_and_flag
+    description: >
+      The operating carrier code is not in the airline list. Same two
+      independent sources, same class of disagreement.
+
+  - id: delay_parseable
+    severity: 3
+    applies_to: flights
+    repair: null_and_count
+    description: >
+      Delay fields that are not numbers. Cancelled flights carry empty
+      delays, which is correct and must become NULL, never 0 - a zero
+      would read as "on time" and drag every average towards punctual.
+
+  - id: cancelled_has_code
+    severity: 3
+    applies_to: flights
+    repair: keep_and_flag
+    description: >
+      A cancelled flight should say why (carrier, weather, NAS, security).
+      Where it does not, the reason is unknown rather than absent.
+
+  - id: airline_active_flag
+    severity: 3
+    applies_to: Airline
+    repair: keep_and_flag
+    description: >
+      Carriers marked inactive that still appear in route data. The route
+      file is a snapshot and lags reality; worth reporting, not fixing.
+
+  - id: region_truncated_at_cap
+    severity: 3
+    applies_to: flies_to
+    repair: report_as_lower_bound
+    description: >
+      Reachability from an airport still expanding at the depth cap. The
+      network is densely connected, so this is expected - it means the
+      answer is a lower bound, not that anything is wrong.
+
+# How show.py draws this domain. The engine must not know that this dataset
+# is about aeroplanes, so the vocabulary it needs lives here with everything
+# else domain-specific.
+display:
+  focus_class: Airport
+  focus_relation: flies_to
+  upstream_label: who flies into
+  downstream_label: where you can fly from
+  owner_relation: null            # Region is derived later, nothing owns yet
+  place_via: in_city              # Airport -> City -> Country
+  default_as_of: "2025-01-03"
+  alt_as_of: "2025-01-24"
+  example: JFK

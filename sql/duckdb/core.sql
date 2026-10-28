@@ -27,18 +27,6 @@ CREATE TABLE IF NOT EXISTS meta (
     key    VARCHAR PRIMARY KEY,
     value  VARCHAR NOT NULL
 );
-INSERT INTO meta(key, value)
-SELECT * FROM (VALUES
-    ('trace_epoch',          '2022-01-01 00:00:00'),
-    ('dataset',              'alibaba/cluster-trace-microservices-v2022'),
-    ('calls_window_seconds', '60')
-) v(k, x)
-WHERE k NOT IN (SELECT key FROM meta);
-
--- Trace milliseconds -> absolute timestamp.
-CREATE OR REPLACE MACRO tms(ms) AS
-    TIMESTAMP '2022-01-01 00:00:00' + (ms * INTERVAL 1 MILLISECOND);
-
 -- Point-in-time validity, written ONCE so every traversal asks the question
 -- the same way. Half-open [valid_from, valid_to) so adjacent intervals never
 -- both match at the boundary instant.
@@ -169,22 +157,6 @@ CREATE TABLE IF NOT EXISTS edges (
     props       JSON
 );
 
--- Raw span rows: the volume driver, ~13.3M per 3-minute slice.
-CREATE TABLE IF NOT EXISTS calls (
-    ts            TIMESTAMP NOT NULL,
-    traceid       VARCHAR NOT NULL,
-    service       VARCHAR,
-    rpc_id        VARCHAR NOT NULL,
-    parent_rpc_id VARCHAR,              -- rpc_id with the last segment trimmed
-    um            BIGINT,               -- Microservice node id, upstream
-    dm            BIGINT,               -- Microservice or Datastore, downstream
-    um_container  BIGINT,
-    dm_container  BIGINT,
-    rpctype       VARCHAR,
-    interface     VARCHAR,
-    rt            DOUBLE
-);
-
 -- -------------------------------------------------------------- validation
 CREATE SEQUENCE IF NOT EXISTS validation_run_seq START 1;
 
@@ -207,66 +179,6 @@ CREATE TABLE IF NOT EXISTS validation_findings (
     found_at    TIMESTAMP NOT NULL DEFAULT now()
 );
 
--- ------------------------------------------------------------------ staging
--- Deliberately permissive: VARCHAR columns, no constraints. Staging must
--- hold the data AS IT IS, including the NaN / (?) / UNKNOWN placeholders and
--- the documented topological inconsistencies, so the validator can measure
--- them. Cleaning before validating would hide exactly what this project
--- exists to show.
---
--- Column order is the ACTUAL CSV header order, which differs from the
--- published README: rpctype sits before um, not after interface.
-CREATE TABLE IF NOT EXISTS stg_callgraph (
-    ts            BIGINT,
-    traceid       VARCHAR,
-    service       VARCHAR,
-    rpc_id        VARCHAR,
-    rpctype       VARCHAR,
-    um            VARCHAR,
-    uminstanceid  VARCHAR,
-    interface     VARCHAR,
-    dm            VARCHAR,
-    dminstanceid  VARCHAR,
-    rt            VARCHAR,
-    src_file      VARCHAR
-);
-
-CREATE TABLE IF NOT EXISTS stg_msmetrics (
-    ts                 BIGINT,
-    msname             VARCHAR,
-    msinstanceid       VARCHAR,
-    nodeid             VARCHAR,
-    cpu_utilization    VARCHAR,
-    memory_utilization VARCHAR,
-    src_file           VARCHAR
-);
-
-CREATE TABLE IF NOT EXISTS stg_nodemetrics (
-    ts                 BIGINT,
-    nodeid             VARCHAR,
-    cpu_utilization    VARCHAR,
-    memory_utilization VARCHAR,
-    src_file           VARCHAR
-);
-
--- v2022 ships MSRTMCR WIDE (22 columns), not the long metric/value shape
--- the 2021 documentation describes. One row per container per minute.
-CREATE TABLE IF NOT EXISTS stg_msrtmcr (
-    ts              BIGINT,
-    msname          VARCHAR,
-    msinstanceid    VARCHAR,
-    nodeid          VARCHAR,
-    providerrpc_rt  VARCHAR, providerrpc_mcr VARCHAR,
-    consumerrpc_rt  VARCHAR, consumerrpc_mcr VARCHAR,
-    writemc_rt      VARCHAR, writemc_mcr     VARCHAR,
-    readmc_rt       VARCHAR, readmc_mcr      VARCHAR,
-    writedb_rt      VARCHAR, writedb_mcr     VARCHAR,
-    readdb_rt       VARCHAR, readdb_mcr      VARCHAR,
-    consumermq_rt   VARCHAR, consumermq_mcr  VARCHAR,
-    providermq_rt   VARCHAR, providermq_mcr  VARCHAR,
-    http_mcr        VARCHAR, http_rt         VARCHAR,
-    src_file        VARCHAR
-);
 
 -- Structurally malformed source lines, made DURABLE.
 --
@@ -296,4 +208,43 @@ CREATE TABLE IF NOT EXISTS ingest_log (
     bytes_read    BIGINT,
     seconds       DOUBLE,
     loaded_at     TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- ------------------------------------------------------------ shared views
+-- These two are DOMAIN-INDEPENDENT: they name no class and no relation, only
+-- the registries and the nodes/edges tables every domain shares. Anything
+-- that has to name a class belongs in domains/<name>/sql/, not here.
+
+CREATE OR REPLACE MACRO graph_summary() AS TABLE (
+    SELECT 'class' AS kind, cr.name, cr.provenance, count(n.id) AS n
+    FROM class_registry cr
+    LEFT JOIN nodes n ON n.class = cr.code
+    GROUP BY cr.name, cr.provenance
+    UNION ALL
+    SELECT 'relation', rr.name, rr.provenance, count(e.src)
+    FROM relation_registry rr
+    LEFT JOIN edges e ON e.rel = rr.code
+    GROUP BY rr.name, rr.provenance
+    ORDER BY kind, n DESC
+);
+
+-- Forward reachability from one node along one relation, as of one instant.
+-- The relation is a PARAMETER, so the same walk serves "which services are
+-- affected" and "which airports become unreachable" without being written
+-- twice. UNION (not UNION ALL) terminates on a cyclic graph; both real
+-- networks here are cyclic.
+CREATE OR REPLACE MACRO reach_from(cls, nkey, rel, as_of, cap) AS TABLE (
+    WITH RECURSIVE r(id, depth) AS (
+        SELECT node_id(class_code(cls), nkey), 0
+        UNION
+        SELECT e.dst, r.depth + 1
+        FROM r
+        JOIN edges e ON e.src = r.id AND e.rel = rel_code(rel)
+                    AND valid_at(e.valid_from, e.valid_to, as_of)
+        WHERE r.depth < cap
+    )
+    SELECT n.nkey AS node, min(r.depth) AS hops
+    FROM r JOIN nodes n ON n.id = r.id
+    WHERE r.depth > 0
+    GROUP BY n.nkey
 );
