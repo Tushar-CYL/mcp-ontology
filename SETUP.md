@@ -21,23 +21,33 @@ It is tested on a real public dataset: Alibaba microservice traces.
 | Need | Why |
 |---|---|
 | **Windows 10/11** | Developed and tested here. Linux/macOS work, paths differ. |
-| **Python 3.14** from [python.org](https://www.python.org/downloads/) | See the warning below — do not use another build. |
+| **Python 3.10 or newer** | Any version from 3.10 up. Built and tested on 3.14. |
 | **~15 GB free disk** | 2 GB downloads + 7 GB database + room to work. |
 | **8 GB RAM minimum**, 32 GB comfortable | The build is memory-hungry at full slice. |
 | **Internet** | Only for step 2 and 3. Everything after runs offline. |
 
-> **Use the signed python.org installer.**
-> Windows Smart App Control blocks unsigned executables. A `uv`-managed
-> CPython is unsigned and its virtual environments will refuse to start. The
-> python.org build is signed and its venvs inherit that signature.
-> If `.venv\Scripts\python.exe` dies silently, this is why.
-
-Check your Python:
+Check what you have:
 
 ```powershell
-py -3.14 --version
-# Python 3.14.x
+py -3 --version
+# anything 3.10 or above is fine
 ```
+
+**On Python version.** `requirements.txt` uses version floors, not exact pins,
+so pip installs whatever works on the Python you have — DuckDB 2.x on 3.11+,
+DuckDB 1.4.x on 3.10. You do not need a specific release.
+
+The cost of that flexibility is that two machines can end up with different
+package versions. That is what step 6 (`verify.py`) is for: it re-measures
+every number, so a version difference shows up as a failed check instead of a
+wrong answer discovered months later. **Run it after installing anywhere new.**
+
+> **If you install Python fresh on Windows, use the signed installer from
+> python.org.** Smart App Control blocks unsigned executables — a
+> `uv`-managed CPython is unsigned, and virtual environments built from it
+> refuse to start. The python.org build is signed and its venvs inherit that
+> signature. If `.venv\Scripts\python.exe` exits silently with no error
+> message, this is why.
 
 ---
 
@@ -46,17 +56,19 @@ py -3.14 --version
 ```powershell
 cd <wherever you copied the project>
 
-py -3.14 -m venv .venv
+py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Verify:
+Verify, and note which versions you got:
 
 ```powershell
-.\.venv\Scripts\python.exe -c "import duckdb, yaml, httpx, networkx; print('ok', duckdb.__version__)"
-# ok 2.0.0
+.\.venv\Scripts\python.exe -c "import sys, duckdb, yaml, httpx, networkx; print('python', sys.version.split()[0]); print('duckdb ', duckdb.__version__); print('networkx', networkx.__version__)"
 ```
+
+Any combination is fine as long as step 6 passes. For reference, the machine
+this was built on reported `python 3.14`, `duckdb 2.0.0`, `networkx 3.7`.
 
 > From here on, every command uses `.\.venv\Scripts\python.exe`, not `python`.
 > That avoids picking up a different interpreter by accident.
@@ -300,6 +312,16 @@ name the exact rows that broke the rule.
 
 **Everything is slow**
 Check `data\okg.duckdb` is on an SSD, not a network drive or USB disk.
+
+**`pip install` says no matching distribution**
+Your Python is older than 3.10. Check with `py -3 --version`. Nothing in the
+code needs a newer one — the floor comes from DuckDB and networkx.
+
+**`verify.py` fails on a machine where it used to pass**
+Most likely a different package version resolved here. Print what you got
+(the command in step 1) and compare against the reference versions. The
+floors in `requirements.txt` allow drift on purpose; this check is how you
+catch it.
 
 ---
 
