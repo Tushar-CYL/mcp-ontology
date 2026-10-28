@@ -118,6 +118,27 @@ Make sure the folder is on an SSD, not a USB stick or network drive.
 All commands start with `.venv\Scripts\python.exe` — that guarantees the
 right interpreter.
 
+### See what each layer produces — start here
+
+```powershell
+.venv\Scripts\python.exe show.py
+```
+
+Prints the real output of all four layers from the real database:
+
+| Layer | Shows |
+|---|---|
+| **1 Ontology** | every class and relation that may exist, with live counts, and the rules enforced |
+| **2 Knowledge graph** | one real service drawn with its actual connections — who calls it, what it calls, where it runs, who owns it |
+| **3 Semantic** | the metric catalogue, then one metric traced YAML → SQL → answer |
+| **4 Context** | the shape of the bundle it will produce (not built yet) |
+
+```powershell
+.venv\Scripts\python.exe show.py --layer graph         # one layer
+.venv\Scripts\python.exe show.py --service MS_51052    # a specific service
+.venv\Scripts\python.exe show.py --at "2022-01-01 00:02:30"
+```
+
 ### Metrics
 
 ```powershell
