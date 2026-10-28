@@ -60,6 +60,12 @@ def main() -> int:
     ap.add_argument("--sample", type=int, default=25,
                     help="violating rows stored per rule")
     ap.add_argument("--only", action="append", help="run only these rule ids")
+    ap.add_argument("--max-severity", type=int, choices=[1, 2, 3],
+                    help="skip rules above this severity. Severity 3 is "
+                         "'report only' and some are expensive - "
+                         "closure_truncated_at_cap alone takes ~7 minutes - "
+                         "so --max-severity 2 gives a fast correctness check "
+                         "without the exhaustive reporting pass")
     ap.add_argument("--report", type=int, help="reprint a previous run")
     args = ap.parse_args()
 
@@ -82,14 +88,26 @@ def main() -> int:
                    "VALUES (?, ?)", [onto["version"], args.stage])
         run_id = db.one("SELECT max(run_id) FROM validation_run")
 
-        todo = [r for r in rules
-                if shapes[r][0] == args.stage
-                and (not args.only or r in args.only)]
-        other = len(rules) - len(todo)
+        in_stage = [r for r in rules
+                    if shapes[r][0] == args.stage
+                    and (not args.only or r in args.only)]
+        todo = [r for r in in_stage
+                if not args.max_severity
+                or rules[r]["severity"] <= args.max_severity]
+        skipped = [r for r in in_stage if r not in todo]
+        other = len(rules) - len(in_stage)
 
         print(f"\nvalidation run {run_id}  stage={args.stage}  "
               f"ontology v{onto['version']}  engine={db.engine}")
-        print(f"{len(todo)} rule(s) to run, {other} for another stage\n")
+        print(f"{len(todo)} rule(s) to run, {other} for another stage")
+        if skipped:
+            # Say what was not checked. A validation report that quietly
+            # omits rules is worse than one that runs none, because it
+            # reads as a clean bill of health.
+            print(f"SKIPPED (severity > {args.max_severity}): "
+                  f"{', '.join(sorted(skipped))}")
+            print("  run without --max-severity for the full check")
+        print()
 
         summary: dict[str, dict] = {}
         failed_hard: list[str] = []

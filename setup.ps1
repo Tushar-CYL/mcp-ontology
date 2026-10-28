@@ -181,8 +181,14 @@ if ($LASTEXITCODE -ne 0) { Die "Team derivation failed." "" }
 
 # --------------------------------------------------------------- 6. prove it
 Say "Checking the rules"
-& $vpy ontology\validate.py --stage graph
+# Severity 1 and 2 only. Severity 3 is report-only, and one of those rules
+# (closure_truncated_at_cap) walks the whole call graph to a depth cap -
+# about 7 minutes, half the total setup time, to produce a number nobody
+# needs during install. The full pass is one command away and is named below.
+& $vpy ontology\validate.py --stage graph --max-severity 2
 if ($LASTEXITCODE -ne 0) { Die "A severity-1 rule failed - the graph is wrong." "Read the sample rows printed above; they name the exact bad rows." }
+Write-Host "    (severity-3 rules skipped to save ~7 min. Full check:"
+Write-Host "     .venv\Scripts\python.exe ontology\validate.py --stage graph)"
 
 Say "Verifying every number"
 & $vpy verify.py
