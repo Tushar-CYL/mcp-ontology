@@ -1,33 +1,7 @@
-# Everything here is REBUILDABLE. None of it should ever be transferred
-# between machines or committed - SETUP.md regenerates all of it.
-
-# The virtual environment bakes in absolute paths, so it cannot be copied to
-# another machine even if you wanted to. Always recreate it.
-.venv/
-venv/
+data/
+*.duckdb
 __pycache__/
 *.pyc
-
-# The database: ~7 GB, rebuilt from data/raw by graph/build.py
-data/*.duckdb
-data/*.duckdb.wal
-data/tmp/
-
-# The downloaded archives: ~2 GB, re-fetched by ingest/fetch.py
-data/raw/
-
-# Downloaded SRE prose for the search layer
-corpus/
-
-# The embedding model file, vendored at build time
-models/
-
-# Secrets. The model API key lives here and must never leave the machine.
+.venv/
+.pytest_cache/
 .env
-*.key
-
-# Editor / OS noise
-.vscode/
-.idea/
-Thumbs.db
-desktop.ini
