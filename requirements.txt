@@ -24,6 +24,16 @@ PyYAML>=6.0,<7             # MIT   - reads ontology.yaml and metrics.yaml
 httpx>=0.27,<1             # BSD   - resumable dataset download
 networkx>=3.3,<4           # BSD   - community detection for derived teams
 psycopg[binary]>=3.2,<4    # LGPL* - Postgres driver; see note below
+truststore>=0.9,<1         # MIT   - verify TLS against the OS trust store
+
+# truststore is here because of corporate networks, and it matters more
+# than its size suggests. Companies routinely inspect HTTPS by re-signing
+# it with their own certificate authority. Windows trusts that CA, so the
+# browser works, but Python ships its own bundle and every request fails
+# with CERTIFICATE_VERIFY_FAILED. truststore verifies against the OS store
+# instead, which already trusts the company CA. Nothing is weakened, no
+# certificate has to be exported by hand, and on a normal network it does
+# nothing at all. A client will hit this on day one.
 
 # ---- needed for the layers still being built ------------------------------
 # Uncomment as each lands. Installing them early costs ~300 MB.

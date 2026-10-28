@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import ssl
 import sys
 import time
 from dataclasses import dataclass
@@ -34,6 +35,29 @@ from pathlib import Path
 import httpx
 
 BASE = "https://aliopentrace.oss-cn-beijing.aliyuncs.com/v2022MicroservicesTraces"
+
+
+def tls_context(insecure: bool):
+    """What httpx should use to verify TLS.
+
+    Corporate networks routinely inspect HTTPS by re-signing it with their
+    own certificate authority. Windows trusts that CA - which is why the
+    browser works - but Python ships its own bundle (certifi) that does
+    not, so every request dies with CERTIFICATE_VERIFY_FAILED.
+
+    truststore fixes that properly by verifying against the operating
+    system's trust store instead of certifi. No certificate to export, no
+    verification turned off, and it is a no-op on a normal network.
+
+    Returns something httpx accepts as `verify`.
+    """
+    if insecure:
+        return False
+    try:
+        import truststore
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except ImportError:
+        return True        # certifi default
 
 
 @dataclass(frozen=True)
@@ -218,10 +242,16 @@ def main() -> int:
 
     headers = {"User-Agent": "okg-ingest/0.1 (+research; resumable)"}
     # trust_env is on by default, so HTTP_PROXY / HTTPS_PROXY are honoured
-    # without any extra work. --insecure exists only for corporate TLS
-    # interception, where the proxy presents its own certificate.
-    with httpx.Client(headers=headers, http2=False,
-                      verify=not args.insecure) as client:
+    # without any extra work.
+    verify = tls_context(args.insecure)
+    if args.insecure:
+        print("  ! TLS verification DISABLED (--insecure)", file=sys.stderr)
+    elif verify is True:
+        print("  ! truststore not installed - using certifi. If this fails "
+              "with CERTIFICATE_VERIFY_FAILED, run:\n"
+              "      pip install truststore", file=sys.stderr)
+
+    with httpx.Client(headers=headers, http2=False, verify=verify) as client:
         if args.dry_run:
             total = 0
             for t, idx, url, dest in plan:
@@ -259,11 +289,15 @@ says which of these you are hitting:
           $env:HTTP_PROXY  = $env:HTTPS_PROXY
       then run setup again.
 
-  "SSLError" / "CERTIFICATE_VERIFY_FAILED"
-      Your company inspects TLS with its own certificate. Either point
-      Python at the company CA bundle:
-          $env:SSL_CERT_FILE = "C:\\path\\to\\company-ca.pem"
-      or, if you accept the risk on a corporate network:
+  "CERTIFICATE_VERIFY_FAILED" / "unable to get local issuer certificate"
+      Your company inspects HTTPS with its own certificate authority.
+      Windows trusts it, Python does not. The proper fix is to make Python
+      use the Windows trust store:
+          .venv\\Scripts\\python.exe -m pip install truststore
+      then run setup again. Nothing is weakened - it verifies against the
+      same certificates your browser already trusts.
+
+      If that still fails, and only if you accept the risk:
           python ingest\\fetch.py --start 0d0 --minutes 9 --insecure
 
   "HTTP 403" / "HTTP 404"

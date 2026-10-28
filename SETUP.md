@@ -76,6 +76,27 @@ No internet, or your company uses a proxy or a private mirror:
 Just run `.\setup.ps1` again. It resumes from where it stopped — nothing is
 lost.
 
+**`CERTIFICATE_VERIFY_FAILED` / "unable to get local issuer certificate"**
+Common on company laptops. Your employer inspects HTTPS by re-signing it with
+their own certificate authority. Windows trusts it — that's why your browser
+works — but Python ships its own certificate list and doesn't.
+
+`requirements.txt` already installs **truststore**, which makes Python verify
+against the Windows trust store instead, so this should be handled
+automatically. Nothing is weakened: it checks against the same certificates
+your browser already trusts.
+
+If you still hit it, make sure truststore is actually installed:
+```powershell
+.venv\Scripts\python.exe -m pip install truststore
+.\setup.ps1
+```
+
+**The network simply will not allow the download**
+You don't need it. Copy the `data\raw` folder from a machine that already has
+it into this project, then run `.\setup.ps1`. It finds the archives and skips
+the download entirely.
+
 **"Could not create the tables"**
 Something else has the database open. DuckDB allows one writer at a time.
 Close other terminals, notebooks or editors touching `data\okg.duckdb`.
