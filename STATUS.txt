@@ -1,0 +1,307 @@
+================================================================================
+
+                        T H E   M I D D L E   L A Y E R
+
+                   what it is · what is done · how to run it
+
+================================================================================
+
+  Project : D:\tushar\ontology
+  Code    : https://github.com/Tushar-CYL/mcp-ontology
+  Tests   : 162, all passing
+  Updated : 2026-10-29
+
+
+--------------------------------------------------------------------------------
+  1.  WHAT WE ARE BUILDING
+--------------------------------------------------------------------------------
+
+  One product, not a project per dataset.
+
+
+   ┌──────────────┐       ┌───────────────────────┐       ┌──────────────┐
+   │              │       │                       │       │              │
+   │   ANY DATA   │──────▶│    THE MIDDLE LAYER   │──────▶│   BI  /  AI  │
+   │    SOURCE    │       │                       │       │              │
+   │              │       │   1  ontology         │       │  dashboards  │
+   │  Postgres    │       │   2  knowledge graph  │       │  chatbots    │
+   │  SQL Server  │       │   3  semantic         │       │  reports     │
+   │  CSV files   │       │   4  context          │       │  agents      │
+   │  Excel       │       │                       │       │              │
+   └──────────────┘       └───────────────────────┘       └──────────────┘
+
+
+  You connect a data source. It works out what is in there and hands the
+  answer to whatever reads it.
+
+  NOBODY WRITES CODE FOR A NEW DATASET. The same program reads a hospital
+  database and a 121 MB shop export. That is the whole point.
+
+
+--------------------------------------------------------------------------------
+  2.  THE FOUR LAYERS
+--------------------------------------------------------------------------------
+
+  ╔════════════════════════════════════════════════════════════════════════╗
+  ║  1  ONTOLOGY            what exists, and what is allowed               ║
+  ║                                                                        ║
+  ║     Reads the source and works out: what KINDS of thing are in here,   ║
+  ║     how do you tell one from another, and what links them.             ║
+  ║                                                                        ║
+  ║     A table      -> a kind of thing     (customers -> Customer)        ║
+  ║     Its key      -> how to identify one (customer_id)                  ║
+  ║     A foreign key-> a link              (Order -> Customer)            ║
+  ║     A date column-> when it was true    (order_purchase_timestamp)     ║
+  ╚════════════════════════════════════════════════════════════════════════╝
+                                    │
+                                    ▼
+  ╔════════════════════════════════════════════════════════════════════════╗
+  ║  2  KNOWLEDGE GRAPH     what connects to what, over time               ║
+  ║                                                                        ║
+  ║     Every row becomes a thing. Every link becomes a line between two   ║
+  ║     things. Every line carries a FROM and TO time, so the graph can    ║
+  ║     be rewound to any moment.                                          ║
+  ╚════════════════════════════════════════════════════════════════════════╝
+                                    │
+                                    ▼
+  ╔════════════════════════════════════════════════════════════════════════╗
+  ║  3  SEMANTIC            the numbers, defined once                      ║
+  ║                                                                        ║
+  ║     Works out what can be measured from the columns that are really    ║
+  ║     there, and writes the SQL. One definition, so a number means the   ║
+  ║     same thing in the dashboard, the report and the chatbot.           ║
+  ╚════════════════════════════════════════════════════════════════════════╝
+                                    │
+                                    ▼
+  ╔════════════════════════════════════════════════════════════════════════╗
+  ║  4  CONTEXT             the packed answer                              ║
+  ║                                                                        ║
+  ║     Gathers facts from the three above, cuts them to a size an AI can  ║
+  ║     actually read, and labels every line: did we MEASURE this, or did  ║
+  ║     we WORK IT OUT?                                                    ║
+  ╚════════════════════════════════════════════════════════════════════════╝
+
+
+--------------------------------------------------------------------------------
+  3.  THE ONE IDEA THAT MATTERS
+--------------------------------------------------------------------------------
+
+  A GUESS MUST NEVER LOOK LIKE A FACT.
+
+      A real database declares its keys.  ->  the link is STATED    100%
+      A CSV file declares nothing.        ->  the link is GUESSED    70%
+
+  Both are shown, everywhere: in the tables, as a dashed arrow in the
+  diagram, and in the final answer.
+
+  If the two looked the same, nobody could tell which answers to trust -
+  and the first wrong one would discredit all of them.
+
+
+--------------------------------------------------------------------------------
+  4.  WHAT IT CAN CONNECT TO
+--------------------------------------------------------------------------------
+
+  WORKS TODAY
+      SQLite              .db  .sqlite  .sqlite3
+      DuckDB              .duckdb
+      CSV / TSV / text    .csv  .tsv  .txt      (a single file or a folder)
+      Parquet             .parquet  .pq
+      Excel               .xlsx  .xls
+      JSON                .json  .ndjson
+      PostgreSQL          postgres://user:pass@host/dbname
+      MySQL               mysql://user:pass@host/dbname
+
+  TESTED ON
+      a hospital database         4 tables, real foreign keys
+      a library database          3 tables, a 2-hop chain
+      Olist e-commerce export     9 CSV files, 121 MB, 1.5M things
+      26 deliberately broken sources - see section 6
+
+  NOT YET
+      Snowflake, BigQuery, Oracle, SQL Server, MongoDB, REST APIs.
+      Each needs one small reader. Nothing above that reader changes.
+
+
+--------------------------------------------------------------------------------
+  5.  HOW MUCH IS DONE
+--------------------------------------------------------------------------------
+
+  ┌──────────────────────────────┬──────────┬──────────────────────────────┐
+  │ PART                         │ STATE    │ NOTES                        │
+  ├──────────────────────────────┼──────────┼──────────────────────────────┤
+  │ 1  Ontology                  │  DONE    │ reads any source unaided     │
+  │ 2  Knowledge graph           │  DONE    │ 1.5M things built in 14s     │
+  │ 3  Semantic                  │  DONE    │ metrics + SQL                │
+  │ 4  Context                   │  PART    │ packing done; no AI wired in │
+  ├──────────────────────────────┼──────────┼──────────────────────────────┤
+  │ The demo UI                  │  DONE    │ four screens                 │
+  │ Terminal version (show.py)   │  DONE    │ same thing, no browser       │
+  │ Tests                        │  DONE    │ 162, unit and end to end     │
+  ├──────────────────────────────┼──────────┼──────────────────────────────┤
+  │ Search over text             │  TO DO   │ for runbooks, notes, reports │
+  │ An API to serve it           │  TO DO   │ so other tools can ask       │
+  │ Time travel in the UI        │  TO DO   │ the graph stores it already  │
+  │ More database connectors     │  TO DO   │ Snowflake, SQL Server, ...   │
+  └──────────────────────────────┴──────────┴──────────────────────────────┘
+
+  Roughly:   layers 1-3 finished   ·   layer 4 half   ·   UI finished
+
+
+--------------------------------------------------------------------------------
+  6.  HOW WE KNOW IT WORKS ON DATA WE HAVE NOT SEEN
+--------------------------------------------------------------------------------
+
+  Waiting for the next dataset to break it is not a plan, so the tests
+  break it on purpose. 26 deliberately awkward sources, including:
+
+      a table with no rows            a key that is unique by accident
+      a table with no key at all      a column called "order" or "select"
+      a key spread over two columns   names with quotes and accents
+      a link pointing at nothing      a loop that would never end
+      every value empty               120 columns
+      mixed types in one column       two tables that clash after cleaning
+
+  The rule is absolute: for ANY source, all four layers must FINISH.
+  A thin answer is fine. A crash, a hang, or a graph that looks right and
+  is wrong, is not.
+
+
+--------------------------------------------------------------------------------
+  7.  HOW TO RUN IT  -  on a laptop, no internet needed
+--------------------------------------------------------------------------------
+
+  You need Python 3.10 or newer, from python.org.
+  Tick "Add python.exe to PATH" during installation.
+
+  Open PowerShell in the project folder and run these in order.
+
+
+  STEP 1   Allow scripts in this window   (Windows blocks them by default)
+
+      Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+
+  STEP 2   Make the environment and install   (about 2 minutes, once)
+
+      py -3 -m venv .venv
+      .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+
+  STEP 3   Check it works   (about 30 seconds)
+
+      .\.venv\Scripts\python.exe -m pytest
+
+      Expect:   162 passed
+
+
+  STEP 4   Start the screen
+
+      .\run_ui.ps1
+
+      Then open   http://localhost:8501   in your browser.
+
+      Use run_ui.ps1 rather than `streamlit run app.py`. It stops any copy
+      that is already running first. An old copy keeps serving OLD code and
+      reports errors for things that are actually fine.
+
+
+  STEP 5   Point it at data
+
+      In the box on the left, type a path and press Enter:
+
+          data\hospital.db            a small example
+          data\raw\kaggledata         the 121 MB shop export
+          C:\somewhere\your.db        anything of your own
+          C:\somewhere\csv_folder     a folder of CSV files
+
+      The first build of a large source takes a minute. After that it
+      opens instantly - it remembers what it already built.
+
+
+--------------------------------------------------------------------------------
+  8.  WHAT YOU SEE  -  four screens
+--------------------------------------------------------------------------------
+
+   ┌────────────────────────────────────────────────────────────────────┐
+   │  1 · ONTOLOGY        what exists here                              │
+   │                                                                    │
+   │    a bar chart    how many of each kind of thing                   │
+   │    a diagram      the kinds, and the links between them            │
+   │    a table        every link, and whether it was stated or guessed │
+   │    a sample       real rows of whichever kind you open             │
+   └────────────────────────────────────────────────────────────────────┘
+
+   ┌────────────────────────────────────────────────────────────────────┐
+   │  2 · KNOWLEDGE GRAPH   the graph itself                            │
+   │                                                                    │
+   │    hundreds of real things and the real lines between them         │
+   │    coloured by kind · bigger dot = more connected                  │
+   │    drag it, zoom it, hover to light up what something touches      │
+   │    a slider for how much to draw                                   │
+   └────────────────────────────────────────────────────────────────────┘
+
+   ┌────────────────────────────────────────────────────────────────────┐
+   │  3 · SEMANTIC        what you can measure                          │
+   │                                                                    │
+   │    pick a measure, split it by anything, see the chart             │
+   │    and the SQL it wrote, so you can check it                       │
+   └────────────────────────────────────────────────────────────────────┘
+
+   ┌────────────────────────────────────────────────────────────────────┐
+   │  4 · CONTEXT         one packed answer                             │
+   │                                                                    │
+   │    facts about one thing, cut to fit a size limit                  │
+   │    every line says measured or guessed                             │
+   └────────────────────────────────────────────────────────────────────┘
+
+
+  WITHOUT A BROWSER  -  the same thing in the terminal:
+
+      .\.venv\Scripts\python.exe show.py data\hospital.db
+
+
+--------------------------------------------------------------------------------
+  9.  IF SOMETHING GOES WRONG
+--------------------------------------------------------------------------------
+
+  "running scripts is disabled"
+      Run STEP 1 again. It only lasts for that window.
+
+  An import error naming something that clearly exists
+      An old copy of the app is still running. Use .\run_ui.ps1, which
+      stops it first.
+
+  "No Python 3.10 or newer found"
+      Install from python.org and tick "Add python.exe to PATH". Close
+      PowerShell, open it again.
+
+  Tables look plain instead of sortable grids
+      Expected on a locked-down machine. Windows Application Control
+      blocks the library that draws them, so the app notices and draws
+      simple tables instead of crashing.
+
+  A large source feels slow the first time
+      It is building the graph. Only the first time - after that it
+      remembers. Press "Rebuild" in the sidebar to force it again.
+
+
+--------------------------------------------------------------------------------
+  10.  WHAT IT CANNOT DO
+--------------------------------------------------------------------------------
+
+  It reads STRUCTURE from your data - tables, keys, types, dates. That
+  part is automatic and needs nothing from you.
+
+  It cannot read your BUSINESS NAMES. Nothing in a database says that a
+  table called "tbl_cust_01" means Customer. It will call it TblCust01
+  until somebody says otherwise:
+
+      .\.venv\Scripts\python.exe show.py mydata.db --name tbl_cust_01=Customer
+
+  That rename is remembered. It is not a code change.
+
+
+================================================================================
+                                    END
+================================================================================
