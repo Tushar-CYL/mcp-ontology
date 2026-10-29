@@ -20,6 +20,7 @@ remembered per dataset:
 
 from __future__ import annotations
 
+import hashlib
 import time
 
 from ontology.discover import Ontology
@@ -28,6 +29,34 @@ from ontology.schema import Schema
 # The source is attached under this alias so a table name can never collide
 # with one of ours.
 SRC = "s"
+
+
+def signature(schema: Schema, onto: Ontology) -> str:
+    """What this graph was built FROM, in one short string.
+
+    Covers the source, every table and its row count, and the ontology -
+    the same rows modelled differently is a different graph. Row counts
+    rather than file mtimes, because a copied or re-exported file changes
+    its timestamp without changing a thing.
+    """
+    parts = [schema.origin, schema.name]
+    for t in sorted(schema.tables, key=lambda x: x.name):
+        parts.append(f"{t.name}:{t.row_count}:{len(t.columns)}")
+    for c in sorted(onto.classes.values(), key=lambda x: x.name):
+        parts.append(f"{c.name}:{c.code}:{c.key}")
+    for r in sorted(onto.relations.values(), key=lambda x: x.name):
+        parts.append(f"{r.name}:{r.domain}>{r.range}")
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()[:32]
+
+
+def is_current(graph, schema: Schema, onto: Ontology) -> bool:
+    """Is this graph already built from exactly this source and ontology?"""
+    try:
+        got = graph.one("SELECT value FROM build_info WHERE key = ?",
+                        ["signature"])
+    except Exception:
+        return False
+    return bool(got) and got == signature(schema, onto)
 
 
 def build(graph, schema: Schema, onto: Ontology,
@@ -61,6 +90,9 @@ def build(graph, schema: Schema, onto: Ontology,
         extra = f"  ({missed:,} had no match)" if missed else ""
         say(f"  {rel.name:<22} {made:>10,} links       "
             f"{time.monotonic() - t:5.1f}s{extra}")
+    graph.con.execute("DELETE FROM build_info WHERE key = 'signature'")
+    graph.con.execute("INSERT INTO build_info(key, value) VALUES (?, ?)",
+                      ["signature", signature(schema, onto)])
     say(f"  built in {time.monotonic() - t0:,.0f}s")
     return stats
 
@@ -322,3 +354,44 @@ def _node_id(code: int, key_expr: str) -> str:
 
 def _esc(s: str) -> str:
     return s.replace("'", "''")
+
+
+# ----------------------------------------------------------- reading back
+def source_rows(graph, schema: Schema, table: str,
+                limit: int = 50) -> tuple[list[str], list[tuple]]:
+    """A sample of the ACTUAL rows behind a table.
+
+    Counts and hashed ids are abstractions. Showing the real row is what
+    turns "1,550,922 things" from a claim into something a person can
+    check.
+    """
+    ref = _ref(graph, schema, table)
+    cur = graph.con.execute(f"SELECT * FROM {ref} LIMIT {int(limit)}")
+    cols = [d[0] for d in cur.description]
+    return [c for c in cols if c != "__row"], \
+           [tuple(v for c, v in zip(cols, r) if c != "__row")
+            for r in cur.fetchall()]
+
+
+def row_for(graph, schema: Schema, onto: Ontology,
+            cls_name: str, key: str) -> dict:
+    """The one source row a node came from, as {column: value}."""
+    cls = onto.classes.get(cls_name)
+    if cls is None:
+        return {}
+    ref = _ref(graph, schema, cls.table)
+    if cls.key_is_synthetic:
+        key_expr = qi("__row")
+    elif len(cls.key_columns) > 1:
+        key_expr = "(" + " || '\u001f' || ".join(
+            f"coalesce(CAST({qi(c)} AS VARCHAR), '')"
+            for c in cls.key_columns) + ")"
+    else:
+        key_expr = f"CAST({qi(cls.key)} AS VARCHAR)"
+    cur = graph.con.execute(
+        f"SELECT * FROM {ref} WHERE {key_expr} = ? LIMIT 1", [str(key)])
+    row = cur.fetchone()
+    if row is None:
+        return {}
+    return {d[0]: v for d, v in zip(cur.description, row)
+            if d[0] != "__row"}

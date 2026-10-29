@@ -52,16 +52,19 @@ class TestItRuns:
         at = AppTest.from_file(APP, default_timeout=TIMEOUT).run()
         assert not at.exception
 
-    def test_a_real_source_renders_all_four_tabs(self, shop_db):
+    def test_a_real_source_renders_a_tab_per_view(self, shop_db):
         at = app_on(shop_db)
         assert not at.exception
-        assert len(at.tabs) == 4
+        labels = [t.label for t in at.tabs]
+        assert labels == ["Your data", "What's in it", "Connections",
+                          "Numbers", "Answer"]
 
     def test_the_headline_numbers_are_there(self, shop_db):
         at = app_on(shop_db)
         labels = [m.label for m in at.metric]
-        assert "Tables read" in labels
+        assert "Tables" in labels
         assert "Kinds of thing" in labels
+        assert "Things" in labels
 
     def test_the_discovered_classes_are_shown(self, shop_db):
         """Assert the CONTENT, not the widget.
@@ -120,6 +123,12 @@ class TestHonesty:
         assert "guessed" in text
 
     def test_a_database_with_real_keys_is_not_called_a_guess(self, shop_db):
+        """SQLite declares its foreign keys, so nothing here is a guess and
+        the 'guessed links' warning must NOT appear."""
         at = app_on(shop_db)
-        deltas = [m.delta for m in at.metric if m.delta]
-        assert any("stated" in str(d) for d in deltas)
+        shown = " ".join(
+            [str(d.value) for d in at.dataframe]
+            + [m.value for m in at.markdown]
+            + [i.value for i in at.info]).lower()
+        assert "stated" in shown
+        assert "were guessed from" not in shown

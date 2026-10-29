@@ -54,6 +54,13 @@ CREATE TABLE IF NOT EXISTS edges (
     PRIMARY KEY (src, rel, dst, valid_from)
 );
 
+-- What this graph was built from, so an unchanged source can be opened
+-- instantly instead of rebuilt.
+CREATE TABLE IF NOT EXISTS build_info (
+    key    VARCHAR PRIMARY KEY,
+    value  VARCHAR NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS findings (
     rule      VARCHAR NOT NULL,
     severity  SMALLINT NOT NULL,

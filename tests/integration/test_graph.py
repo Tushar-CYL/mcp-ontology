@@ -234,3 +234,92 @@ class TestTableWithNoKey:
         build(g, schema, onto)
         assert sorted(g.keys_of("OrderItem")) == before
         assert g.count_class("OrderItem") == 3
+
+
+class TestSkipRebuild:
+    """Rebuilding a graph that is already correct is pure waiting.
+
+    The app opens the same source repeatedly; on a large export that was
+    minutes of spinner every time, which reads as 'broken' long before it
+    reads as 'thorough'.
+    """
+
+    @pytest.fixture
+    def src(self, tmp_path):
+        d = tmp_path / "s"
+        d.mkdir()
+        (d / "customers.csv").write_text("customer_id,city\nc1,X\nc2,Y\n",
+                                         encoding="utf-8")
+        (d / "orders.csv").write_text("order_id,customer_id\no1,c1\n",
+                                      encoding="utf-8")
+        return d
+
+    def test_an_unchanged_source_is_not_rebuilt(self, src, tmp_path):
+        from knowledge_graph.build import is_current
+        schema = connect(str(src))
+        onto = discover(schema)
+        g = open_graph(tmp_path / "skip.duckdb")
+        assert not is_current(g, schema, onto)
+        build(g, schema, onto)
+        assert is_current(g, schema, onto)
+
+    def test_a_changed_source_is_rebuilt(self, src, tmp_path):
+        from knowledge_graph.build import is_current
+        schema = connect(str(src))
+        g = open_graph(tmp_path / "chg.duckdb")
+        build(g, schema, discover(schema))
+        (src / "orders.csv").write_text(
+            "order_id,customer_id\no1,c1\no2,c2\n", encoding="utf-8")
+        schema2 = connect(str(src))
+        assert not is_current(g, schema2, discover(schema2))
+
+    def test_a_renamed_class_forces_a_rebuild(self, src, tmp_path):
+        """The ontology is part of the signature: the same rows modelled
+        differently is a different graph."""
+        from knowledge_graph.build import is_current
+        schema = connect(str(src))
+        g = open_graph(tmp_path / "ren.duckdb")
+        build(g, schema, discover(schema))
+        renamed = discover(schema, names={"customers": "Buyer"})
+        assert not is_current(g, schema, renamed)
+
+
+class TestSeeTheRealRows:
+    """Counts and ids are abstractions. Being able to show the actual row a
+    node came from is what makes a graph believable rather than asserted."""
+
+    @pytest.fixture
+    def src(self, tmp_path):
+        d = tmp_path / "raw"
+        d.mkdir()
+        (d / "customers.csv").write_text(
+            "customer_id,name,city\nc1,Ada,London\nc2,Grace,York\n",
+            encoding="utf-8")
+        return d
+
+    def test_rows_can_be_read_back(self, src, tmp_path):
+        from knowledge_graph.build import source_rows
+        schema = connect(str(src))
+        g = open_graph(tmp_path / "rows.duckdb")
+        build(g, schema, discover(schema))
+        cols, rows = source_rows(g, schema, "customers", limit=10)
+        assert cols == ["customer_id", "name", "city"]
+        assert ("c1", "Ada", "London") in [tuple(r) for r in rows]
+
+    def test_the_row_behind_one_node(self, src, tmp_path):
+        from knowledge_graph.build import row_for
+        schema = connect(str(src))
+        onto = discover(schema)
+        g = open_graph(tmp_path / "one.duckdb")
+        build(g, schema, onto)
+        got = row_for(g, schema, onto, "Customer", "c2")
+        assert got["name"] == "Grace"
+        assert got["city"] == "York"
+
+    def test_a_missing_row_gives_nothing_not_an_error(self, src, tmp_path):
+        from knowledge_graph.build import row_for
+        schema = connect(str(src))
+        onto = discover(schema)
+        g = open_graph(tmp_path / "miss.duckdb")
+        build(g, schema, onto)
+        assert row_for(g, schema, onto, "Customer", "nope") == {}
