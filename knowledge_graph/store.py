@@ -208,6 +208,60 @@ class Graph:
             WHERE w.d > 0""", args)
         return {f"{cls_name}:{key}" for cls_name, key in rows}
 
+    def subgraph(self, limit: int = 250, relation: str | None = None,
+                 as_of: str | None = None):
+        """A slice of the real graph: nodes, and the edges between them.
+
+        Returns only edges whose BOTH ends are in the returned node set, so
+        the picture never shows an arrow going nowhere. Sampling edges and
+        then collecting their nodes - rather than the reverse - is what
+        keeps the slice connected; a sample of nodes is mostly isolated
+        dots.
+        """
+        where = ["1=1"]
+        args: list = []
+        if relation:
+            where.append("e.rel = ?")
+            args.append(self.relation_code(relation))
+        if as_of:
+            where.append("(e.valid_from IS NULL OR e.valid_from <= CAST(? AS TIMESTAMP))")
+            where.append("(e.valid_to IS NULL OR e.valid_to > CAST(? AS TIMESTAMP))")
+            args += [as_of, as_of]
+
+        rows = self.sql(f"""
+            SELECT ns.nkey, cs.name, nd.nkey, cd.name, r.name, r.provenance
+            FROM edges e
+            JOIN nodes ns ON ns.id = e.src
+            JOIN nodes nd ON nd.id = e.dst
+            JOIN classes cs ON cs.code = ns.class
+            JOIN classes cd ON cd.code = nd.class
+            JOIN relations r ON r.code = e.rel
+            WHERE {" AND ".join(where)}
+            LIMIT {int(limit)}""", args)
+
+        seen: dict[str, dict] = {}
+        edges = []
+        for sk, scls, dk, dcls, rel, prov in rows:
+            a, b = f"{scls}:{sk}", f"{dcls}:{dk}"
+            seen.setdefault(a, {"id": a, "key": sk, "class": scls})
+            seen.setdefault(b, {"id": b, "key": dk, "class": dcls})
+            edges.append({"source": a, "target": b,
+                          "relation": rel, "provenance": prov})
+        return list(seen.values()), edges
+
+    def class_counts(self) -> list[tuple[str, int]]:
+        """How many of each kind of thing, biggest first."""
+        return self.sql("""
+            SELECT c.name, count(n.id) AS n
+            FROM classes c LEFT JOIN nodes n ON n.class = c.code
+            GROUP BY c.name ORDER BY n DESC, c.name""")
+
+    def instances(self, cls: str, limit: int = 25) -> list[tuple]:
+        """A sample of real things of one kind, with their columns."""
+        return self.sql(
+            "SELECT nkey, props FROM nodes WHERE class = ? LIMIT ?",
+            [self.class_code(cls), int(limit)])
+
     def summary(self) -> list[tuple]:
         return self.sql("""
             SELECT 'class' AS kind, c.name, c.provenance, count(n.id)

@@ -323,3 +323,54 @@ class TestSeeTheRealRows:
         g = open_graph(tmp_path / "miss.duckdb")
         build(g, schema, onto)
         assert row_for(g, schema, onto, "Customer", "nope") == {}
+
+
+class TestSubgraph:
+    """A graph you look at, not one you query a node at a time.
+
+    Picking one node from a dropdown and seeing its neighbours is a lookup.
+    Seeing many nodes and the real edges between them is a graph, and it is
+    the only view that shows shape - hubs, clusters, things joined to
+    nothing.
+    """
+
+    @pytest.fixture
+    def shop(self, tmp_path):
+        d = tmp_path / "sub"
+        d.mkdir()
+        (d / "customers.csv").write_text(
+            "customer_id,city\n" + "".join(f"c{i},X\n" for i in range(6)),
+            encoding="utf-8")
+        (d / "orders.csv").write_text(
+            "order_id,customer_id\n"
+            + "".join(f"o{i},c{i % 6}\n" for i in range(12)),
+            encoding="utf-8")
+        g = open_graph(tmp_path / "sub.duckdb")
+        schema = connect(str(d))
+        build(g, schema, discover(schema))
+        return g
+
+    def test_it_returns_nodes_and_the_edges_between_them(self, shop):
+        nodes, edges = shop.subgraph(limit=50)
+        assert nodes and edges
+        ids = {n["id"] for n in nodes}
+        for e in edges:
+            assert e["source"] in ids and e["target"] in ids, \
+                "an edge must not point outside the returned nodes"
+
+    def test_every_node_says_what_kind_it_is(self, shop):
+        nodes, _ = shop.subgraph(limit=50)
+        assert all(n["class"] for n in nodes)
+        assert {"Customer", "Order"} == {n["class"] for n in nodes}
+
+    def test_the_limit_is_respected(self, shop):
+        _, edges = shop.subgraph(limit=3)
+        assert len(edges) <= 3
+
+    def test_it_can_be_narrowed_to_one_relation(self, shop):
+        _, edges = shop.subgraph(limit=50, relation="customer")
+        assert all(e["relation"] == "customer" for e in edges)
+
+    def test_an_empty_graph_returns_empty_not_an_error(self, tmp_path):
+        g = open_graph(tmp_path / "none.duckdb")
+        assert g.subgraph(limit=10) == ([], [])

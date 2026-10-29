@@ -56,15 +56,19 @@ class TestItRuns:
         at = app_on(shop_db)
         assert not at.exception
         labels = [t.label for t in at.tabs]
-        assert labels == ["Your data", "What's in it", "Connections",
-                          "Numbers", "Answer"]
+        # Exactly four views, one per layer. Nothing else.
+        assert len(labels) == 4
+        assert "Ontology" in labels[0]
+        assert "Knowledge graph" in labels[1]
+        assert "Semantic" in labels[2]
+        assert "Context" in labels[3]
 
     def test_the_headline_numbers_are_there(self, shop_db):
         at = app_on(shop_db)
         labels = [m.label for m in at.metric]
-        assert "Tables" in labels
         assert "Kinds of thing" in labels
         assert "Things" in labels
+        assert "Guessed links" in labels
 
     def test_the_discovered_classes_are_shown(self, shop_db):
         """Assert the CONTENT, not the widget.
@@ -78,9 +82,17 @@ class TestItRuns:
         assert not at.exception
         shown = " ".join(
             [str(d.value) for d in at.dataframe]
-            + [m.value for m in at.markdown])
+            + [m.value for m in at.markdown]
+            + [m.label + " " + str(m.value) for m in at.metric])
         assert "Customer" in shown and "Order" in shown
-        assert "customers" in shown      # the table it came from
+
+        # Whichever kind is selected by default, it must say which source
+        # table it came from. Asserting a PARTICULAR table would pin the
+        # test to the default selection, which is ordered by row count and
+        # is not what this test is about.
+        tables = {t.name for t in __import__(
+            "ontology.connect", fromlist=["connect"]).connect(shop_db).tables}
+        assert any(t in shown for t in tables)
 
 
 class TestItFailsPolitely:
