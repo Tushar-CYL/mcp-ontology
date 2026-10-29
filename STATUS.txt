@@ -8,7 +8,7 @@
 
   Project : D:\tushar\ontology
   Code    : https://github.com/Tushar-CYL/mcp-ontology
-  Tests   : 162, all passing
+  Tests   : 165, all passing
   Updated : 2026-10-29
 
 
@@ -168,55 +168,61 @@
 
 
 --------------------------------------------------------------------------------
-  7.  HOW TO RUN IT  -  on a laptop, no internet needed
+  7.  HOW TO RUN IT  -  three commands
 --------------------------------------------------------------------------------
 
   You need Python 3.10 or newer, from python.org.
   Tick "Add python.exe to PATH" during installation.
 
-  Open PowerShell in the project folder and run these in order.
+  Open PowerShell or Command Prompt IN THIS FOLDER and run:
 
 
-  STEP 1   Allow scripts in this window   (Windows blocks them by default)
+      python -m pip install -r requirements.txt      (once, ~2 minutes)
 
-      Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+      python run.py                                  see it in the terminal
 
-
-  STEP 2   Make the environment and install   (about 2 minutes, once)
-
-      py -3 -m venv .venv
-      .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+      python ui.py                                   see it on a screen
 
 
-  STEP 3   Check it works   (about 30 seconds)
+  That is everything. No virtual environment, no `py` launcher, no
+  `streamlit` command - every one of those is a thing that can be missing
+  on a locked-down machine, and each one has already cost an afternoon.
 
-      .\.venv\Scripts\python.exe -m pytest
-
-      Expect:   162 passed
-
-
-  STEP 4   Start the screen
-
-      .\run_ui.ps1
-
-      Then open   http://localhost:8501   in your browser.
-
-      Use run_ui.ps1 rather than `streamlit run app.py`. It stops any copy
-      that is already running first. An old copy keeps serving OLD code and
-      reports errors for things that are actually fine.
+  If `python` is not recognised, Python is not on your PATH. Reinstall it
+  from python.org and tick "Add python.exe to PATH", then close the window
+  and open a new one.
 
 
-  STEP 5   Point it at data
+  POINTING IT AT YOUR OWN DATA
 
-      In the box on the left, type a path and press Enter:
+      python run.py C:\myfiles\your.db
+      python run.py C:\myfiles\csv_folder
+      python run.py postgres://user:pass@host/dbname
 
-          data\hospital.db            a small example
-          data\raw\kaggledata         the 121 MB shop export
-          C:\somewhere\your.db        anything of your own
-          C:\somewhere\csv_folder     a folder of CSV files
+  With no argument, run.py builds a small example shop and uses that, so a
+  fresh copy always has something to show.
 
-      The first build of a large source takes a minute. After that it
-      opens instantly - it remembers what it already built.
+  In the UI, type the path into the box on the left instead.
+
+
+  SEEING THE SCREEN
+
+      python ui.py
+
+  then open   http://localhost:8501   in your browser.
+  Press Ctrl+C in the terminal to stop it.
+
+  ui.py stops any copy already running first. That matters: Streamlit
+  re-runs app.py on every click but does NOT reload the code underneath,
+  so an old copy keeps serving old code and reports errors for things that
+  are perfectly fine.
+
+
+  CHECKING IT ALL WORKS  (optional, ~30 seconds)
+
+      python -m pytest
+
+      Expect:   165 passed
 
 
 --------------------------------------------------------------------------------
@@ -258,7 +264,7 @@
 
   WITHOUT A BROWSER  -  the same thing in the terminal:
 
-      .\.venv\Scripts\python.exe show.py data\hospital.db
+      python run.py
 
 
 --------------------------------------------------------------------------------
@@ -297,7 +303,7 @@
   table called "tbl_cust_01" means Customer. It will call it TblCust01
   until somebody says otherwise:
 
-      .\.venv\Scripts\python.exe show.py mydata.db --name tbl_cust_01=Customer
+      python run.py mydata.db
 
   That rename is remembered. It is not a code change.
 

@@ -17,12 +17,19 @@ hospital, or a 121 MB e-commerce export.
 ## Try it
 
 ```powershell
-pip install -r requirements.txt
+python -m pip install -r requirements.txt   # once
 
-streamlit run app.py                      # the demo UI
-python show.py <your-file-or-folder>      # the same thing in a terminal
-pytest                                    # 146 tests
+python run.py                               # see it in the terminal
+python ui.py                                # see it on a screen
 ```
+
+Three commands. No virtual environment, no `py` launcher, no `streamlit`
+command — each of those is a thing that can be missing on a locked-down
+machine.
+
+`python run.py` with no argument builds a small example, so a fresh clone
+always has something to show. Point it at your own data with
+`python run.py <file-or-folder>`.
 
 Sources: a database file, a folder of CSV/Parquet/Excel, one file, or a
 `postgres://` / `mysql://` URL.
@@ -53,5 +60,5 @@ cannot read your **business names**: nothing in a schema says `tbl_cust_01`
 means Customer. Rename it and the new name is stored, not coded:
 
 ```powershell
-python show.py mydata.db --name tbl_cust_01=Customer
+python run.py mydata.db
 ```

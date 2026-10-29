@@ -71,6 +71,12 @@ def build(graph, schema: Schema, onto: Ontology,
     t0 = time.monotonic()
 
     _register(graph, onto)
+
+    # A real rebuild starts from the source again, so drop the copies a
+    # previous build made. _attach only skips work when they survive, and
+    # a stale copy would be built from data that has since changed.
+    for t_ in schema.readers:
+        graph.con.execute(f'DROP TABLE IF EXISTS {qi(f"{SRC}_{t_}")}')
     say(f"  reading the source ({len(schema.tables)} tables)")
     _attach(graph, schema, say)
     _materialise_keys(graph, schema, onto, say)
@@ -132,10 +138,15 @@ def _attach(graph, schema: Schema, say=lambda _: None) -> None:
         # One parse up front, then every later query is a scan of a column
         # store.
         for table, reader in schema.readers.items():
+            dest = f"{SRC}_{table}"
+            # Already copied in by an earlier build? Re-parsing a 1M-row
+            # file to produce the identical table is pure waiting.
+            if graph.one("SELECT count(*) FROM duckdb_tables() "
+                         "WHERE table_name = ?", [dest]):
+                continue
             t = time.monotonic()
-            graph.con.execute(f'DROP TABLE IF EXISTS "{SRC}_{table}"')
             graph.con.execute(
-                f'CREATE TABLE "{SRC}_{table}" AS SELECT * FROM {reader}')
+                f"CREATE TABLE {qi(dest)} AS SELECT * FROM {reader}")
             say(f"    loaded {table:<34} {time.monotonic() - t:5.1f}s")
         return
 
@@ -192,9 +203,19 @@ def _materialise_keys(graph, schema: Schema, onto: Ontology,
         say(f"    numbered rows of {cls.table} (it has no key of its own)")
 
 
+def table_ref(graph, schema: Schema, table: str) -> str:
+    """How to address a source table in SQL, whatever kind of source it is.
+
+    A file source is COPIED in as "s_orders"; a database is ATTACHED as
+    s."orders". Anything that wants to read source rows - the builder, the
+    metric compiler, the row lookup - has to ask here rather than assume a
+    shape, because assuming one meant metrics worked on CSV and on nothing
+    else.
+    """
+    return _ref(graph, schema, table)
+
+
 def _ref(graph, schema: Schema, table: str) -> str:
-    """How to address a source table, preferring a keyed rewrite if one
-    was made."""
     # Ask the DATABASE whether a rewritten table exists, rather than a
     # dict on this object. The dict only exists in the process that did
     # the build, so reopening an unchanged graph - which is the normal

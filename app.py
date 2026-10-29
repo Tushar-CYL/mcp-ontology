@@ -16,7 +16,8 @@ from pathlib import Path
 import streamlit as st
 
 from context.budget import Fact, fit, render
-from knowledge_graph.build import build, is_current, row_for
+from knowledge_graph.build import (build, is_current, row_for,
+                                   table_ref)
 from knowledge_graph.store import open_graph
 from ontology.connect import SourceError, connect
 from ontology.discover import discover
@@ -292,7 +293,8 @@ with tabs[2]:
     group = m2.selectbox("Split by", ["(nothing)"] + sorted(metric.dimensions))
 
     sql, params = compile_metric(
-        metric, group_by=None if group == "(nothing)" else group)
+        metric, group_by=None if group == "(nothing)" else group,
+        table_sql=table_ref(graph, schema, metric.table))
     try:
         rows = graph.sql(sql, params)
         if group != "(nothing)" and rows:

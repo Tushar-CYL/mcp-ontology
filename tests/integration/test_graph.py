@@ -475,3 +475,55 @@ class TestKeysAreNotAllLoaded:
         build(g, schema, discover(schema))
         assert len(g.keys_of("Row", limit=50)) == 50
         assert len(g.keys_of("Row")) == 5000
+
+
+class TestMetricsWorkOnEverySourceType:
+    """A metric must compute whatever the source was.
+
+    File sources are COPIED into the graph as s_<table>; a database is
+    ATTACHED as s."<table>". The metric compiler assumed the first shape,
+    so every metric worked on CSV and none worked on a database - which is
+    the shape a real client brings.
+    """
+
+    @pytest.fixture
+    def as_db(self, tmp_path):
+        p = tmp_path / "shop.db"
+        con = sqlite3.connect(p)
+        con.executescript("""
+            CREATE TABLE sales (id INTEGER PRIMARY KEY, amount REAL);
+            INSERT INTO sales VALUES (1,10.0),(2,20.0),(3,30.0);""")
+        con.commit(); con.close()
+        return str(p)
+
+    @pytest.fixture
+    def as_csv(self, tmp_path):
+        d = tmp_path / "csv"
+        d.mkdir()
+        (d / "sales.csv").write_text("id,amount\n1,10.0\n2,20.0\n3,30.0\n",
+                                     encoding="utf-8")
+        return str(d)
+
+    def _total(self, source, tmp_path, tag):
+        from knowledge_graph.build import table_ref
+        from semantic.compile import compile_metric
+        from semantic.discover import discover_metrics
+        schema = connect(source)
+        onto = discover(schema)
+        g = open_graph(tmp_path / f"{tag}.duckdb")
+        build(g, schema, onto)
+        m = next(x for x in discover_metrics(onto)
+                 if x.column == "amount" and x.agg == "sum")
+        sql, params = compile_metric(
+            m, table_sql=table_ref(g, schema, m.table))
+        return g.sql(sql, params)[0][0]
+
+    def test_a_database_source(self, as_db, tmp_path):
+        assert self._total(as_db, tmp_path, "db") == 60.0
+
+    def test_a_csv_source(self, as_csv, tmp_path):
+        assert self._total(as_csv, tmp_path, "csv") == 60.0
+
+    def test_both_give_the_same_answer(self, as_db, as_csv, tmp_path):
+        assert self._total(as_db, tmp_path, "d2") == \
+               self._total(as_csv, tmp_path, "c2")

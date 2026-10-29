@@ -23,8 +23,15 @@ def qi(name: str) -> str:
 
 
 def compile_metric(m: Metric, group_by: str | None = None,
-                   where: dict | None = None,
-                   limit: int = 100, table_prefix: str = SRC) -> tuple[str, list]:
+                   where: dict | None = None, limit: int = 100,
+                   table_sql: str | None = None,
+                   table_prefix: str = SRC) -> tuple[str, list]:
+    """SQL for one metric.
+
+    `table_sql` is how to address the table in THIS graph - ask
+    knowledge_graph.build.table_ref for it. Without it the compiler has to
+    guess a naming scheme, and the guess is only right for file sources.
+    """
     where = where or {}
 
     allowed = set(m.dimensions) | ({m.time_column} if m.time_column else set())
@@ -43,7 +50,8 @@ def compile_metric(m: Metric, group_by: str | None = None,
     else:
         expr = f"{m.agg}({qi(m.column)})"
 
-    table = qi(f"{table_prefix}_{m.table}") if table_prefix else qi(m.table)
+    table = table_sql or (qi(f"{table_prefix}_{m.table}")
+                          if table_prefix else qi(m.table))
 
     select = [f"{qi(group_by)} AS grouped"] if group_by else []
     select.append(f"{expr} AS value")
