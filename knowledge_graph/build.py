@@ -180,7 +180,6 @@ def _materialise_keys(graph, schema: Schema, onto: Ontology,
     # builds in the same process, so one source's rewritten tables were
     # still being looked for while building the next - which failed loudly
     # here but would have been silent corruption if the names had matched.
-    graph._keyed = {}
     for cls in onto.classes.values():
         if not cls.key_is_synthetic:
             continue
@@ -190,16 +189,21 @@ def _materialise_keys(graph, schema: Schema, onto: Ontology,
         graph.con.execute(
             f"CREATE TABLE {qi(dest)} AS SELECT *, "
             f"CAST(row_number() OVER () AS VARCHAR) AS __row FROM {src}")
-        graph._keyed[cls.table] = qi(dest)
         say(f"    numbered rows of {cls.table} (it has no key of its own)")
 
 
 def _ref(graph, schema: Schema, table: str) -> str:
     """How to address a source table, preferring a keyed rewrite if one
     was made."""
-    keyed = getattr(graph, "_keyed", {})
-    if table in keyed:
-        return keyed[table]
+    # Ask the DATABASE whether a rewritten table exists, rather than a
+    # dict on this object. The dict only exists in the process that did
+    # the build, so reopening an unchanged graph - which is the normal
+    # case once a source is built - found the raw table and looked for a
+    # column that only the rewrite has.
+    dest = f"{SRC}_keyed_{table}"
+    if graph.one("SELECT count(*) FROM duckdb_tables() "
+                 "WHERE table_name = ?", [dest]):
+        return qi(dest)
     return _raw_ref(graph, schema, table)
 
 

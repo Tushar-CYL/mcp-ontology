@@ -117,9 +117,13 @@ class Graph:
         return self.one("SELECT count(*) FROM edges WHERE rel = ?",
                         [self.relation_code(name)]) or 0
 
-    def keys_of(self, cls: str) -> set[str]:
-        return {r[0] for r in self.sql(
-            "SELECT nkey FROM nodes WHERE class = ?", [self.class_code(cls)])}
+    def keys_of(self, cls: str, limit: int | None = None) -> set[str]:
+        """Keys of one kind. LIMIT in SQL, not a slice in Python: a caller
+        showing 300 of them was pulling a million strings first."""
+        sql = "SELECT nkey FROM nodes WHERE class = ?"
+        if limit:
+            sql += f" LIMIT {int(limit)}"
+        return {r[0] for r in self.sql(sql, [self.class_code(cls)])}
 
     def props_of(self, cls: str, key: str) -> dict:
         raw = self.one(
@@ -210,43 +214,88 @@ class Graph:
 
     def subgraph(self, limit: int = 250, relation: str | None = None,
                  as_of: str | None = None):
-        """A slice of the real graph: nodes, and the edges between them.
+        """A slice of the real graph that LOOKS like the real graph.
 
-        Returns only edges whose BOTH ends are in the returned node set, so
-        the picture never shows an arrow going nowhere. Sampling edges and
-        then collecting their nodes - rather than the reverse - is what
-        keeps the slice connected; a sample of nodes is mostly isolated
-        dots.
+        Two deliberate choices, both learned from a sample that lied:
+
+        FAIR ACROSS RELATIONS. A plain LIMIT returns the first N rows,
+        which all come from whichever relation was inserted first - a real
+        export showed 2 kinds out of 9 and presented it as the graph. Each
+        relation gets a share of the budget instead.
+
+        HUBS FIRST, BUT NOT ONE HUB. Edges are taken from the most
+        connected nodes, so the picture shows structure - a customer with
+        many orders, a product in many baskets - where a random scatter
+        draws every node exactly once and shows nothing. The pool of hubs
+        grows with the budget: drawn from a fixed top-40 it collapsed onto
+        a single product and a single seller, which is a true fact about
+        the data presented as if it were the whole of it.
+
+        Only edges whose BOTH ends are included are returned, so no arrow
+        ever points off the picture.
         """
-        where = ["1=1"]
-        args: list = []
-        if relation:
-            where.append("e.rel = ?")
-            args.append(self.relation_code(relation))
-        if as_of:
-            where.append("(e.valid_from IS NULL OR e.valid_from <= CAST(? AS TIMESTAMP))")
-            where.append("(e.valid_to IS NULL OR e.valid_to > CAST(? AS TIMESTAMP))")
-            args += [as_of, as_of]
+        rels = ([relation] if relation
+                else [r[0] for r in self.sql("SELECT name FROM relations")])
+        rels = [r for r in rels if self.relation_code(r) is not None]
+        if not rels:
+            return [], []
 
-        rows = self.sql(f"""
-            SELECT ns.nkey, cs.name, nd.nkey, cd.name, r.name, r.provenance
-            FROM edges e
-            JOIN nodes ns ON ns.id = e.src
-            JOIN nodes nd ON nd.id = e.dst
-            JOIN classes cs ON cs.code = ns.class
-            JOIN classes cd ON cd.code = nd.class
-            JOIN relations r ON r.code = e.rel
-            WHERE {" AND ".join(where)}
-            LIMIT {int(limit)}""", args)
+        share = max(1, limit // len(rels))
+        pool = max(8, share // 4)        # how many hubs per relation
+        # Spokes per hub. Too tight and every node has the same degree, so
+        # a hub and a leaf look identical; too loose and one node's edges
+        # eat the whole quota. Around six visible hubs per relation reads
+        # well at any budget.
+        per_hub = max(4, share // 6)
+        rows: list[tuple] = []
+        for name in rels:
+            code = self.relation_code(name)
+            args: list = [code]
+            time_sql = ""
+            if as_of:
+                time_sql = ("AND (e.valid_from IS NULL OR e.valid_from <= "
+                            "CAST(? AS TIMESTAMP)) AND (e.valid_to IS NULL "
+                            "OR e.valid_to > CAST(? AS TIMESTAMP))")
+                args += [as_of, as_of]
+            # Rank destinations by how many edges they attract, then take
+            # the edges of the busiest few. That is what makes a hub look
+            # like a hub.
+            rows += self.sql(f"""
+                WITH hot AS (
+                    SELECT dst, count(*) AS deg
+                    FROM edges e
+                    WHERE e.rel = ? {time_sql}
+                    GROUP BY dst ORDER BY deg DESC
+                    LIMIT {pool}
+                )
+                SELECT ns.nkey, cs.name, nd.nkey, cd.name, r.name,
+                       r.provenance
+                FROM edges e
+                JOIN hot ON hot.dst = e.dst
+                JOIN nodes ns ON ns.id = e.src
+                JOIN nodes nd ON nd.id = e.dst
+                JOIN classes cs ON cs.code = ns.class
+                JOIN classes cd ON cd.code = nd.class
+                JOIN relations r ON r.code = e.rel
+                WHERE e.rel = ? {time_sql}
+                -- Cap the edges taken from each hub. Without it the
+                -- busiest node's edges fill the whole quota and the
+                -- picture shows ONE product, which is true and useless.
+                QUALIFY row_number() OVER (PARTITION BY e.dst
+                                           ORDER BY e.src)
+                        <= {per_hub}
+                LIMIT {int(share)}""", args + [code] + args[1:])
 
         seen: dict[str, dict] = {}
         edges = []
-        for sk, scls, dk, dcls, rel, prov in rows:
+        for sk, scls, dk, dcls, rel_name, prov in rows[:limit]:
             a, b = f"{scls}:{sk}", f"{dcls}:{dk}"
-            seen.setdefault(a, {"id": a, "key": sk, "class": scls})
-            seen.setdefault(b, {"id": b, "key": dk, "class": dcls})
+            for nid, key, cls_ in ((a, sk, scls), (b, dk, dcls)):
+                n = seen.setdefault(
+                    nid, {"id": nid, "key": key, "class": cls_, "degree": 0})
+                n["degree"] += 1
             edges.append({"source": a, "target": b,
-                          "relation": rel, "provenance": prov})
+                          "relation": rel_name, "provenance": prov})
         return list(seen.values()), edges
 
     def class_counts(self) -> list[tuple[str, int]]:

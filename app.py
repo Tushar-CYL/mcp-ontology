@@ -254,9 +254,12 @@ with tabs[1]:
                 "force": {"repulsion": 160, "edgeLength": 70,
                           "gravity": 0.08},
                 "lineStyle": {"opacity": 0.5, "curveness": 0.08},
+                # Size by how connected a thing is. Drawn all the same
+                # size, a hub and a leaf are indistinguishable and the
+                # picture says nothing a table could not.
                 "data": [{"name": n["id"], "value": n["key"],
                           "category": kinds.index(n["class"]),
-                          "symbolSize": 10 if len(nodes) > 200 else 18}
+                          "symbolSize": min(46, 8 + 3.2 * n["degree"])}
                          for n in nodes],
                 "links": [{"source": e["source"], "target": e["target"],
                            "value": e["relation"]} for e in edges],
@@ -268,8 +271,12 @@ with tabs[1]:
         g1.metric("Things drawn", f"{len(nodes):,}")
         g2.metric("Links drawn", f"{len(edges):,}")
         g3.metric("Links in total", f"{stats['edges']:,}")
-        st.caption("Hover a thing to highlight what it touches. Each colour "
-                   "is a kind, matching the chart in Ontology.")
+        busiest = max(nodes, key=lambda n: n["degree"])
+        st.caption(
+            f"Bigger means more connected — the busiest thing drawn is "
+            f"**{busiest['class']} {busiest['key']}** with "
+            f"{busiest['degree']} links. Hover to highlight what something "
+            f"touches. Colours match the chart in Ontology.")
 
 # ====================================================== 3 · SEMANTIC
 with tabs[2]:
@@ -319,7 +326,7 @@ with tabs[3]:
 
     a1, a2 = st.columns(2, vertical_alignment="bottom")
     acls = a1.selectbox("About", order, key="acls")
-    akeys = sorted(graph.keys_of(acls))[:300]
+    akeys = sorted(graph.keys_of(acls, limit=300))
     if not akeys:
         st.info("Nothing of this kind was built.", icon=":material/info:")
     else:

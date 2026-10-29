@@ -374,3 +374,104 @@ class TestSubgraph:
     def test_an_empty_graph_returns_empty_not_an_error(self, tmp_path):
         g = open_graph(tmp_path / "none.duckdb")
         assert g.subgraph(limit=10) == ([], [])
+
+
+class TestKeyedTableSurvivesReopen:
+    """The rewritten tables must be found again after the process restarts.
+
+    A table with no key of its own gets a stored row number in a side
+    table. Which tables were rewritten was remembered on the Graph object,
+    in memory - so once an unchanged source was opened WITHOUT rebuilding,
+    nothing remembered, and reading a row back looked for a column that
+    only exists in the rewrite. Where the rewrite lives has to be a fact
+    about the database, not about this process.
+    """
+
+    @pytest.fixture
+    def keyless(self, tmp_path):
+        d = tmp_path / "kl"
+        d.mkdir()
+        (d / "readings.csv").write_text(
+            "sensor,value\na,1\na,2\nb,3\n", encoding="utf-8")
+        return d
+
+    def test_a_row_can_be_read_after_reopening_without_a_rebuild(
+            self, keyless, tmp_path):
+        from knowledge_graph.build import is_current, row_for
+        path = tmp_path / "kl.duckdb"
+        schema = connect(str(keyless))
+        onto = discover(schema)
+        g = open_graph(path)
+        build(g, schema, onto)
+        key = sorted(g.keys_of("Reading"))[0]
+        g.close()
+
+        # Reopen exactly as the app does: no rebuild, because nothing moved.
+        g2 = open_graph(path)
+        assert is_current(g2, schema, onto)
+        got = row_for(g2, schema, onto, "Reading", key)
+        assert got, "the source row must still be findable"
+        assert "sensor" in got
+
+
+class TestSubgraphIsRepresentative:
+    """A sample that shows one link type is not a picture of the graph.
+
+    LIMIT without ordering returns the first N rows, which are all from
+    whichever relation was inserted first. On a real export that meant the
+    graph view showed 2 kinds out of 9 and claimed to be the graph.
+    """
+
+    @pytest.fixture
+    def many(self, tmp_path):
+        d = tmp_path / "many"
+        d.mkdir()
+        (d / "customers.csv").write_text(
+            "customer_id\n" + "".join(f"c{i}\n" for i in range(40)),
+            encoding="utf-8")
+        (d / "products.csv").write_text(
+            "product_id\n" + "".join(f"p{i}\n" for i in range(40)),
+            encoding="utf-8")
+        # Every order points at a customer AND a product, so both
+        # relations have the same number of edges available.
+        (d / "orders.csv").write_text(
+            "order_id,customer_id,product_id\n"
+            + "".join(f"o{i},c{i % 40},p{i % 40}\n" for i in range(120)),
+            encoding="utf-8")
+        g = open_graph(tmp_path / "many.duckdb")
+        schema = connect(str(d))
+        build(g, schema, discover(schema))
+        return g
+
+    def test_every_relation_appears_in_the_sample(self, many):
+        _, edges = many.subgraph(limit=40)
+        kinds = {e["relation"] for e in edges}
+        assert kinds == {"customer", "product"}, \
+            "a sample showing one link type is not a picture of the graph"
+
+    def test_every_kind_of_thing_appears(self, many):
+        nodes, _ = many.subgraph(limit=40)
+        assert {"Order", "Customer", "Product"} == {n["class"] for n in nodes}
+
+    def test_nodes_carry_how_connected_they_are(self, many):
+        """Without degree every node is drawn the same size, so a hub and a
+        leaf look identical and the picture says nothing."""
+        nodes, _ = many.subgraph(limit=60)
+        assert all("degree" in n for n in nodes)
+        assert max(n["degree"] for n in nodes) > 1
+
+
+class TestKeysAreNotAllLoaded:
+    def test_keys_of_takes_a_limit(self, tmp_path):
+        """Pulling a million keys into Python to show 300 of them is a
+        million strings of work for nothing."""
+        d = tmp_path / "big"
+        d.mkdir()
+        (d / "rows.csv").write_text(
+            "row_id\n" + "".join(f"r{i}\n" for i in range(5000)),
+            encoding="utf-8")
+        g = open_graph(tmp_path / "big.duckdb")
+        schema = connect(str(d))
+        build(g, schema, discover(schema))
+        assert len(g.keys_of("Row", limit=50)) == 50
+        assert len(g.keys_of("Row")) == 5000
