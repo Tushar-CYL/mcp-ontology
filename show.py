@@ -113,7 +113,8 @@ def main() -> int:
     # -------------------------------------------------------- LAYER 2
     head("2", "KNOWLEDGE GRAPH", "the connections, with time on them")
     g = open_graph(args.graph)
-    stats = build(g, schema, onto)
+    print()
+    stats = build(g, schema, onto, progress=lambda m: print(m, flush=True))
 
     print()
     table(["kind", "name", "how", "count"],

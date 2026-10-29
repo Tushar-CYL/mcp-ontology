@@ -140,6 +140,10 @@ class DiscoveredClass:
     code: int
     table: str
     key: str
+    # Every column of the key. A composite key - order_items keyed by
+    # (order_id, line) - is normal, and taking only the first column made
+    # three rows collapse into two because order_id repeats.
+    key_columns: list[str] = field(default_factory=list)
     provenance: str = "measured"
     key_is_synthetic: bool = False
     time_column: str | None = None
@@ -221,7 +225,8 @@ def discover(schema: Schema, names: dict[str, str] | None = None) -> Ontology:
         taken_names.add(name)
 
         synthetic = not t.primary_key
-        key = t.primary_key[0] if t.primary_key else "__row"
+        key_cols = list(t.primary_key)
+        key = key_cols[0] if key_cols else "__row"
         code = stable_code(name, taken_codes)
         taken_codes.add(code)
 
@@ -244,8 +249,8 @@ def discover(schema: Schema, names: dict[str, str] | None = None) -> Ontology:
 
         onto.classes[name] = DiscoveredClass(
             name=name, code=code, table=t.name, key=key,
-            key_is_synthetic=synthetic, time_column=time_col,
-            measures=measures, dimensions=dimensions)
+            key_columns=key_cols, key_is_synthetic=synthetic,
+            time_column=time_col, measures=measures, dimensions=dimensions)
 
     # -------------------------------------------------------- relations
     rel_names: set[str] = set()
@@ -268,7 +273,13 @@ def discover(schema: Schema, names: dict[str, str] | None = None) -> Ontology:
         # Common in warehouses where constraints were never created, and in
         # every CSV. Always 'derived' - a guess must never read as a fact.
         for c in t.columns:
-            if c.name.lower() in declared or c.name.lower() == src.key.lower():
+            # A column is excluded for being THE key only when the key is a
+            # single column. In a composite key - a join table keyed by
+            # (order_id, line) - the key columns are usually foreign keys
+            # too, and skipping them left such tables connected to nothing.
+            sole_key = (len(src.key_columns) <= 1
+                        and c.name.lower() == src.key.lower())
+            if c.name.lower() in declared or sole_key:
                 continue
             ref = _referenced_table(schema, c.name)
             if ref is None or ref.name.lower() == t.name.lower():

@@ -20,6 +20,8 @@ remembered per dataset:
 
 from __future__ import annotations
 
+import time
+
 from ontology.discover import Ontology
 from ontology.schema import Schema
 
@@ -29,19 +31,37 @@ SRC = "s"
 
 
 def build(graph, schema: Schema, onto: Ontology,
-          echo: bool = False) -> dict:
-    """Populate the graph. Returns counts, so a caller can report honestly."""
+          echo: bool = False, progress=None) -> dict:
+    """Populate the graph. Returns counts, so a caller can report honestly.
+
+    `progress` is called with a line of text after each step. Building a
+    large source takes minutes, and a program that prints nothing for
+    minutes looks hung - people kill it and report it as broken.
+    """
+    say = progress or (lambda _: None)
+    t0 = time.monotonic()
+
     _register(graph, onto)
-    _attach(graph, schema)
-    _materialise_keys(graph, schema, onto)
+    say(f"  reading the source ({len(schema.tables)} tables)")
+    _attach(graph, schema, say)
+    _materialise_keys(graph, schema, onto, say)
 
     stats = {"nodes": 0, "edges": 0, "skipped_edges": 0}
     for cls in onto.classes.values():
-        stats["nodes"] += _nodes(graph, schema, cls, echo)
+        t = time.monotonic()
+        n = _nodes(graph, schema, cls, echo)
+        stats["nodes"] += n
+        say(f"  {cls.name:<22} {n:>10,} things      "
+            f"{time.monotonic() - t:5.1f}s")
     for rel in onto.relations.values():
+        t = time.monotonic()
         made, missed = _edges(graph, schema, onto, rel, echo)
         stats["edges"] += made
         stats["skipped_edges"] += missed
+        extra = f"  ({missed:,} had no match)" if missed else ""
+        say(f"  {rel.name:<22} {made:>10,} links       "
+            f"{time.monotonic() - t:5.1f}s{extra}")
+    say(f"  built in {time.monotonic() - t0:,.0f}s")
     return stats
 
 
@@ -63,7 +83,7 @@ def _register(graph, onto: Ontology) -> None:
             [r.code, r.name, r.domain, r.range, r.provenance, r.confidence])
 
 
-def _attach(graph, schema: Schema) -> None:
+def _attach(graph, schema: Schema, say=lambda _: None) -> None:
     """Make the source readable from inside the graph database.
 
     Two cases, and after this point nothing above cares which:
@@ -80,9 +100,11 @@ def _attach(graph, schema: Schema) -> None:
         # One parse up front, then every later query is a scan of a column
         # store.
         for table, reader in schema.readers.items():
+            t = time.monotonic()
             graph.con.execute(f'DROP TABLE IF EXISTS "{SRC}_{table}"')
             graph.con.execute(
                 f'CREATE TABLE "{SRC}_{table}" AS SELECT * FROM {reader}')
+            say(f"    loaded {table:<34} {time.monotonic() - t:5.1f}s")
         return
 
     origin = schema.origin
@@ -108,7 +130,8 @@ def _attach(graph, schema: Schema) -> None:
     graph.con.execute(f"ATTACH '{_esc(origin)}' AS {SRC} ({kind}READ_ONLY)")
 
 
-def _materialise_keys(graph, schema: Schema, onto: Ontology) -> None:
+def _materialise_keys(graph, schema: Schema, onto: Ontology,
+                      say=lambda _: None) -> None:
     """Give keyless tables a real, stored row number.
 
     A table with no unique column still has to become nodes AND be the
@@ -121,27 +144,30 @@ def _materialise_keys(graph, schema: Schema, onto: Ontology) -> None:
     Storing it once removes both problems, and makes the ids stable across
     rebuilds as a side effect.
     """
+    # Per-graph, never module-level. A module global survived between
+    # builds in the same process, so one source's rewritten tables were
+    # still being looked for while building the next - which failed loudly
+    # here but would have been silent corruption if the names had matched.
+    graph._keyed = {}
     for cls in onto.classes.values():
         if not cls.key_is_synthetic:
             continue
         src = _raw_ref(graph, schema, cls.table)
         dest = f"{SRC}_keyed_{cls.table}"
-        graph.con.execute(f'DROP TABLE IF EXISTS "{dest}"')
+        graph.con.execute(f"DROP TABLE IF EXISTS {qi(dest)}")
         graph.con.execute(
-            f'CREATE TABLE "{dest}" AS SELECT *, '
-            f'CAST(row_number() OVER () AS VARCHAR) AS __row FROM {src}')
-        _KEYED[cls.table] = f'"{dest}"'
-
-
-# Tables rewritten with a stored synthetic key, by original table name.
-_KEYED: dict[str, str] = {}
+            f"CREATE TABLE {qi(dest)} AS SELECT *, "
+            f"CAST(row_number() OVER () AS VARCHAR) AS __row FROM {src}")
+        graph._keyed[cls.table] = qi(dest)
+        say(f"    numbered rows of {cls.table} (it has no key of its own)")
 
 
 def _ref(graph, schema: Schema, table: str) -> str:
     """How to address a source table, preferring a keyed rewrite if one
     was made."""
-    if table in _KEYED:
-        return _KEYED[table]
+    keyed = getattr(graph, "_keyed", {})
+    if table in keyed:
+        return keyed[table]
     return _raw_ref(graph, schema, table)
 
 
@@ -166,25 +192,41 @@ def _nodes(graph, schema: Schema, cls, echo: bool) -> int:
     # table, so both this query and the edge query below read the same
     # values. Recomputing it here is what made the ids drift.
     src = tbl
-    key = '"__row"' if cls.key_is_synthetic else f'"{cls.key}"'
+    if cls.key_is_synthetic:
+        key = qi("__row")
+    elif len(cls.key_columns) > 1:
+        # A composite key is one identity spread over several columns.
+        # Joined with a separator that cannot appear in a value, so
+        # ('a|b', 'c') and ('a', 'b|c') stay distinct.
+        parts = " || '' || ".join(
+            f"coalesce(CAST({qi(c)} AS VARCHAR), '')" for c in cls.key_columns)
+        key = f"({parts})"
+    else:
+        key = qi(cls.key)
 
     prop_cols = [c for c in cls.measures + cls.dimensions]
     if cls.time_column:
         prop_cols.append(cls.time_column)
     props = ("to_json({" +
-             ", ".join(f"'{c}': \"{c}\"" for c in prop_cols) + "})") \
+             ", ".join(f"{ql(c)}: {qi(c)}" for c in prop_cols) + "})") \
         if prop_cols else "NULL"
 
+    # LEFT JOIN + IS NULL, not ON CONFLICT DO NOTHING.
+    #
+    # ON CONFLICT probes the primary-key index once PER ROW, so each insert
+    # got slower as the table filled: on a real export the first class took
+    # 1.5s and a later one with the SAME row count took 117s. An anti-join
+    # is a single hash build, which is what a columnar engine is good at.
     sql = f"""
     INSERT INTO nodes (id, class, nkey, props)
-    SELECT {_node_id(cls.code, 'k')}, {cls.code}, k, p
+    SELECT {_node_id(cls.code, 'q.k')}, {cls.code}, q.k, q.p
     FROM (
         SELECT CAST({key} AS VARCHAR) AS k, {props} AS p,
                row_number() OVER (PARTITION BY CAST({key} AS VARCHAR)) AS rn
         FROM {src}
     ) q
-    WHERE rn = 1 AND k IS NOT NULL AND k <> ''
-    ON CONFLICT DO NOTHING"""
+    LEFT JOIN nodes ex ON ex.class = {cls.code} AND ex.nkey = q.k
+    WHERE q.rn = 1 AND q.k IS NOT NULL AND q.k <> '' AND ex.id IS NULL"""
     if echo:
         print(sql)
     before = graph.one("SELECT count(*) FROM nodes") or 0
@@ -208,11 +250,19 @@ def _edges(graph, schema: Schema, onto: Ontology, rel,
     # point-in-time query without asserting anything.
     tcol = src_cls.time_column
     FOREVER = "'-infinity'::TIMESTAMP"
-    vfrom = (f'coalesce(TRY_CAST("{tcol}" AS TIMESTAMP), {FOREVER})'
+    vfrom = (f"coalesce(TRY_CAST({qi(tcol)} AS TIMESTAMP), {FOREVER})"
              if tcol else FOREVER)
 
-    src_key = f'CAST("{src_cls.key}" AS VARCHAR)'
-    dst_key = f'CAST("{rel.column}" AS VARCHAR)'
+    if src_cls.key_is_synthetic:
+        src_key = f"CAST({qi('__row')} AS VARCHAR)"
+    elif len(src_cls.key_columns) > 1:
+        parts = " || '' || ".join(
+            f"coalesce(CAST({qi(c)} AS VARCHAR), '')"
+            for c in src_cls.key_columns)
+        src_key = f"({parts})"
+    else:
+        src_key = f"CAST({qi(src_cls.key)} AS VARCHAR)"
+    dst_key = f"CAST({qi(rel.column)} AS VARCHAR)"
 
     # Note the joins: ON n.nkey = ..., never ON n.id = node_id(...).
     sql = f"""
@@ -225,7 +275,9 @@ def _edges(graph, schema: Schema, onto: Ontology, rel,
     ) q
     JOIN nodes a ON a.class = {src_cls.code} AND a.nkey = q.sk
     JOIN nodes b ON b.class = {dst_cls.code} AND b.nkey = q.dk
-    ON CONFLICT DO NOTHING"""
+    LEFT JOIN edges ex ON ex.src = a.id AND ex.rel = {rel.code}
+                      AND ex.dst = b.id AND ex.valid_from = q.vf
+    WHERE ex.src IS NULL"""
     if echo:
         print(sql)
 
@@ -249,6 +301,18 @@ def _edges(graph, schema: Schema, onto: Ontology, rel,
             [rel.name, f'{{"rows": {missed}, "relation": "{rel.name}", '
                        f'"points_at": "{rel.range}"}}'])
     return made, missed
+
+
+def qi(name: str) -> str:
+    """Quote an identifier. Real exports have columns called `order`,
+    `select`, and `it's_here`; unquoted or naively quoted, each one is a
+    parser error rather than a column."""
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def ql(value: str) -> str:
+    """Quote a string literal, doubling any embedded apostrophe."""
+    return "'" + str(value).replace("'", "''") + "'"
 
 
 def _node_id(code: int, key_expr: str) -> str:
