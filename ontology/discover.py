@@ -62,9 +62,56 @@ def singular(word: str) -> str:
     return w
 
 
+# Words that describe the EXPORT, not the data. Real files are called
+# `olist_customers_dataset`, `dim_customer`, `stg_orders_v2` - and a class
+# called OlistCustomersDataset is unusable in front of anyone.
+NOISE = {"dataset", "data", "table", "tbl", "dim", "fact", "fct", "stg",
+         "staging", "raw", "final", "export", "extract", "tmp", "temp",
+         "new", "old", "copy", "backup", "bak", "csv", "file"}
+
+VERSION = re.compile(r"^v?\d+$")
+
+
+def core_name(table: str) -> str:
+    """The meaningful part of a table name, with export noise removed.
+
+    `olist_customers_dataset` -> `customers`. If every part is noise the
+    name is kept whole: something must be left to call the class.
+    """
+    parts = [p for p in re.split(r"[^A-Za-z0-9]+", table.lower()) if p]
+    kept = [p for p in parts if p not in NOISE and not VERSION.match(p)]
+    return "_".join(kept) if kept else "_".join(parts) or table.lower()
+
+
+def strip_common_prefix(names: list[str]) -> list[str]:
+    """Drop a first word shared by EVERY table.
+
+    It names the export, not the thing. Requiring EVERY table to share it
+    was too strict on real data: the Olist export has `olist_` on eight of
+    nine files, and the ninth
+    (`product_category_name_translation`) left every class called
+    OlistSomething. A clear majority is enough, and the odd table out keeps
+    its name.
+    """
+    if len(names) < 2:
+        return list(names)
+    from collections import Counter
+    firsts = Counter(n.split("_", 1)[0] for n in names if "_" in n)
+    if not firsts:
+        return list(names)
+    prefix, hits = firsts.most_common(1)[0]
+    if hits < 2 or hits / len(names) < 0.6:
+        return list(names)
+    out = []
+    for n in names:
+        tail = n[len(prefix) + 1:] if n.startswith(prefix + "_") else n
+        out.append(tail or n)       # never strip a name down to nothing
+    return out
+
+
 def class_name(table: str) -> str:
-    """`order_items` -> `OrderItem`. Readable, and stable for a given input."""
-    parts = re.split(r"[^A-Za-z0-9]+", table)
+    """`olist_order_items_dataset` -> `OrderItem`. Stable for a given input."""
+    parts = re.split(r"[^A-Za-z0-9]+", core_name(table))
     parts = [p for p in parts if p]
     if not parts:
         return "Thing"
@@ -158,11 +205,18 @@ def discover(schema: Schema, names: dict[str, str] | None = None) -> Ontology:
     names = {k.lower(): v for k, v in (names or {}).items()}
     onto = Ontology(source=schema.name)
 
+    # A first word shared by EVERY table names the export, not the data -
+    # `olist_` on all nine Olist files. Only visible across the whole set,
+    # which is why it is removed here and not inside core_name().
+    cores = [core_name(t.name) for t in schema.tables]
+    cleaned = dict(zip([t.name for t in schema.tables],
+                       strip_common_prefix(cores)))
+
     # --------------------------------------------------------- classes
     taken_names: set[str] = set()
     taken_codes: set[int] = set()
     for t in schema.tables:
-        name = names.get(t.name.lower()) or class_name(t.name)
+        name = names.get(t.name.lower()) or class_name(cleaned[t.name])
         name = _unique(name, taken_names)
         taken_names.add(name)
 
@@ -242,8 +296,14 @@ def _referenced_table(schema: Schema, column: str) -> Table | None:
     if not stem:
         return None
     for t in schema.tables:
-        tl = t.name.lower()
-        if tl == stem or singular(tl) == singular(stem):
+        core = core_name(t.name)
+        if core == stem or singular(core) == singular(stem):
+            return t
+    # Last resort: the stem is the TAIL of the core name. `customer_id`
+    # against `ecommerce_customers`, which the exact match above misses.
+    for t in schema.tables:
+        core = singular(core_name(t.name))
+        if core.endswith("_" + singular(stem)) or singular(stem) == core:
             return t
     return None
 
@@ -253,6 +313,11 @@ def _add_relation(onto, rel_names, taken_codes, src, target,
     # Named from the COLUMN, not the target table: `sender_id` and
     # `recipient_id` both point at people and must not collide.
     base = re.sub(r"(_?id|_?ref|_?key|_?code)$", "", column.lower()) or column.lower()
+    # Several tables legitimately have a `customer_id`. Numbering the
+    # clashes (`order2`, `order3`) hides which is which, so a clash is
+    # qualified by the table that owns it: `payment_order`, `review_order`.
+    if base in rel_names:
+        base = f"{src.name.lower()}_{base}"
     name = _unique(base, rel_names)
     rel_names.add(name)
     code = stable_code(f"{src.name}.{name}", taken_codes)

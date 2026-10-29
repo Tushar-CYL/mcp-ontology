@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from ontology.keys import pick_key, profile_sql
 from ontology.schema import Column, ForeignKey, Schema, Table
 
 # Extensions DuckDB reads directly. Anything else needs a real connector.
@@ -88,14 +89,31 @@ def _from_files(con, files: list[Path], name: str) -> Schema:
         except Exception as e:
             raise SourceError(f"could not read {f.name}: {e}") from e
         readers[f.stem.lower()] = ref
-        tables.append(Table(
-            name=f.stem.lower(),
-            # A file declares no nullability, so every column is nullable
-            # until something proves otherwise. Claiming NOT NULL here would
-            # make the rule that checks it fire on data we never inspected.
-            columns=[Column(c[0], str(c[1]).upper(), nullable=True)
-                     for c in cols],
-            primary_key=[], foreign_keys=[], row_count=rows))
+        # A file declares nothing - no key, no nullability. Both are
+        # readable by counting, in ONE pass per file: on a million-row CSV
+        # a query per column would be minutes instead of seconds.
+        names = [c[0] for c in cols]
+        stats = {}
+        if rows:
+            try:
+                got = con.execute(profile_sql(f.stem, names, ref)).fetchone()
+                for i, n in enumerate(names):
+                    stats[n] = (got[1 + i * 2], got[2 + i * 2])  # distinct, non-null
+            except Exception:
+                pass    # profiling is an optimisation; never fail the read
+
+        columns = []
+        for c in cols:
+            d, nn = stats.get(c[0], (None, None))
+            columns.append(Column(c[0], str(c[1]).upper(),
+                                  nullable=(nn is None or nn < rows),
+                                  distinct=d))
+        t = Table(name=f.stem.lower(), columns=columns,
+                  primary_key=[], foreign_keys=[], row_count=rows)
+        found = pick_key(t)
+        if found:
+            t.primary_key = [found]
+        tables.append(t)
     return Schema(tables=tables, name=name,
                   origin=str(files[0].parent if len(files) > 1 else files[0]),
                   readers=readers)

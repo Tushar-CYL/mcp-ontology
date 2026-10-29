@@ -183,3 +183,54 @@ class TestNeverSeenBefore:
         build(g, schema, discover(schema))
         # Loan 1 -> Book 1 -> Author 1 (Woolf)
         assert g.reach("Loan", "1", "book", depth=1) == {"Book:1"}
+
+
+class TestTableWithNoKey:
+    """A CSV often has no unique column at all - order_items is keyed by
+    (order_id, item_number) and nothing else. Such a table still has to
+    become nodes, and still has to be the SOURCE of edges.
+
+    The row number that stands in for a key must be computed ONCE. Two
+    separate row_number() calls are not guaranteed to agree, so a key
+    recomputed per query can silently point edges at the wrong nodes.
+    """
+
+    @pytest.fixture
+    def keyless(self, tmp_path):
+        d = tmp_path / "keyless"
+        d.mkdir()
+        (d / "orders.csv").write_text(
+            "order_id,placed_at\no1,2024-01-01\no2,2024-01-02\n",
+            encoding="utf-8")
+        # No unique column: o1 appears twice.
+        (d / "order_items.csv").write_text(
+            "order_id,line,price\no1,1,10.0\no1,2,5.5\no2,1,7.25\n",
+            encoding="utf-8")
+        return d
+
+    def test_the_keyless_table_still_becomes_nodes(self, keyless, tmp_path):
+        schema = connect(str(keyless))
+        onto = discover(schema)
+        assert onto.classes["OrderItem"].key_is_synthetic is True
+        g = open_graph(tmp_path / "k.duckdb")
+        build(g, schema, onto)
+        assert g.count_class("OrderItem") == 3
+
+    def test_edges_from_a_keyless_table_are_built(self, keyless, tmp_path):
+        """This is what failed on a real export: the edge query looked for
+        the synthetic column in the raw table, where it does not exist."""
+        schema = connect(str(keyless))
+        g = open_graph(tmp_path / "k2.duckdb")
+        build(g, schema, discover(schema))
+        assert g.count_relation("order") == 3
+        assert g.dangling_edges() == 0
+
+    def test_synthetic_ids_are_stable_across_rebuilds(self, keyless, tmp_path):
+        schema = connect(str(keyless))
+        onto = discover(schema)
+        g = open_graph(tmp_path / "k3.duckdb")
+        build(g, schema, onto)
+        before = sorted(g.keys_of("OrderItem"))
+        build(g, schema, onto)
+        assert sorted(g.keys_of("OrderItem")) == before
+        assert g.count_class("OrderItem") == 3

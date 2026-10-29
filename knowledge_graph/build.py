@@ -33,6 +33,7 @@ def build(graph, schema: Schema, onto: Ontology,
     """Populate the graph. Returns counts, so a caller can report honestly."""
     _register(graph, onto)
     _attach(graph, schema)
+    _materialise_keys(graph, schema, onto)
 
     stats = {"nodes": 0, "edges": 0, "skipped_edges": 0}
     for cls in onto.classes.values():
@@ -73,10 +74,15 @@ def _attach(graph, schema: Schema) -> None:
     tool that reads your warehouse should be incapable of writing to it.
     """
     if schema.readers:
+        # A TABLE, not a view. A view re-parses the file on every query, and
+        # the build asks several questions per table - so a 1M-row CSV was
+        # being read from disk a dozen times and the build never finished.
+        # One parse up front, then every later query is a scan of a column
+        # store.
         for table, reader in schema.readers.items():
+            graph.con.execute(f'DROP TABLE IF EXISTS "{SRC}_{table}"')
             graph.con.execute(
-                f'CREATE OR REPLACE VIEW "{SRC}_{table}" AS '
-                f'SELECT * FROM {reader}')
+                f'CREATE TABLE "{SRC}_{table}" AS SELECT * FROM {reader}')
         return
 
     origin = schema.origin
@@ -102,8 +108,45 @@ def _attach(graph, schema: Schema) -> None:
     graph.con.execute(f"ATTACH '{_esc(origin)}' AS {SRC} ({kind}READ_ONLY)")
 
 
+def _materialise_keys(graph, schema: Schema, onto: Ontology) -> None:
+    """Give keyless tables a real, stored row number.
+
+    A table with no unique column still has to become nodes AND be the
+    source of edges. Computing `row_number()` separately in each query is
+    wrong twice over: the column does not exist in the raw table at all,
+    and two row_number() calls are not guaranteed to produce the same
+    order, so ids could silently drift between the nodes and the edges
+    that point at them.
+
+    Storing it once removes both problems, and makes the ids stable across
+    rebuilds as a side effect.
+    """
+    for cls in onto.classes.values():
+        if not cls.key_is_synthetic:
+            continue
+        src = _raw_ref(graph, schema, cls.table)
+        dest = f"{SRC}_keyed_{cls.table}"
+        graph.con.execute(f'DROP TABLE IF EXISTS "{dest}"')
+        graph.con.execute(
+            f'CREATE TABLE "{dest}" AS SELECT *, '
+            f'CAST(row_number() OVER () AS VARCHAR) AS __row FROM {src}')
+        _KEYED[cls.table] = f'"{dest}"'
+
+
+# Tables rewritten with a stored synthetic key, by original table name.
+_KEYED: dict[str, str] = {}
+
+
 def _ref(graph, schema: Schema, table: str) -> str:
-    """How to address a source table from the graph connection."""
+    """How to address a source table, preferring a keyed rewrite if one
+    was made."""
+    if table in _KEYED:
+        return _KEYED[table]
+    return _raw_ref(graph, schema, table)
+
+
+def _raw_ref(graph, schema: Schema, table: str) -> str:
+    """The source table as it actually arrived."""
     if schema.readers:
         return f'"{SRC}_{table}"'
     if graph.one("SELECT count(*) FROM duckdb_databases() "
@@ -118,8 +161,12 @@ def _nodes(graph, schema: Schema, cls, echo: bool) -> int:
     so the node carries enough to be readable without re-reading the source.
     """
     tbl = _ref(graph, schema, cls.table)
-    key = f'"{cls.key}"' if not cls.key_is_synthetic else \
-        "CAST(row_number() OVER () AS VARCHAR)"
+
+    # _materialise_keys has already stored a __row column for a keyless
+    # table, so both this query and the edge query below read the same
+    # values. Recomputing it here is what made the ids drift.
+    src = tbl
+    key = '"__row"' if cls.key_is_synthetic else f'"{cls.key}"'
 
     prop_cols = [c for c in cls.measures + cls.dimensions]
     if cls.time_column:
@@ -134,7 +181,7 @@ def _nodes(graph, schema: Schema, cls, echo: bool) -> int:
     FROM (
         SELECT CAST({key} AS VARCHAR) AS k, {props} AS p,
                row_number() OVER (PARTITION BY CAST({key} AS VARCHAR)) AS rn
-        FROM {tbl}
+        FROM {src}
     ) q
     WHERE rn = 1 AND k IS NOT NULL AND k <> ''
     ON CONFLICT DO NOTHING"""
@@ -154,8 +201,15 @@ def _edges(graph, schema: Schema, onto: Ontology, rel,
 
     # The row's own time, if it has one. Without it the edge is open-ended,
     # which is the honest encoding of "true, but we do not know since when".
+    # An edge with no date is valid for all time, which is '-infinity',
+    # not NULL. NULL would say "unknown" and then fail the primary key;
+    # worse, a sentinel like 1970-01-01 would claim the link STARTED then,
+    # which is a invented fact. -infinity reads correctly in every
+    # point-in-time query without asserting anything.
     tcol = src_cls.time_column
-    vfrom = f'CAST("{tcol}" AS TIMESTAMP)' if tcol else "NULL"
+    FOREVER = "'-infinity'::TIMESTAMP"
+    vfrom = (f'coalesce(TRY_CAST("{tcol}" AS TIMESTAMP), {FOREVER})'
+             if tcol else FOREVER)
 
     src_key = f'CAST("{src_cls.key}" AS VARCHAR)'
     dst_key = f'CAST("{rel.column}" AS VARCHAR)'

@@ -46,8 +46,11 @@ CREATE TABLE IF NOT EXISTS edges (
     src         BIGINT NOT NULL,
     rel         SMALLINT NOT NULL,
     dst         BIGINT NOT NULL,
-    valid_from  TIMESTAMP,
-    valid_to    TIMESTAMP,
+    -- '-infinity' means "no start recorded", so the edge is true at every
+    -- instant. NOT NULL because it is part of the key: the same link can
+    -- exist on many days and each is its own row.
+    valid_from  TIMESTAMP NOT NULL DEFAULT '-infinity',
+    valid_to    TIMESTAMP,          -- NULL = still open
     PRIMARY KEY (src, rel, dst, valid_from)
 );
 
