@@ -1,0 +1,31 @@
+flowchart LR
+  subgraph AUTO["Fully automatic"]
+    A1["tables -> classes"]
+    A2["keys via unique + non-null profile"]
+    A3["declared FK -> measured relation"]
+    A4["date column -> time validity candidate"]
+    A5["measures / dimensions by type"]
+    A6["graph build + findings"]
+  end
+  subgraph CONF["Automatic with confidence"]
+    C1["inferred relations (name/profile match, 0.7)"]
+    C2["ambiguous keys / accidental uniqueness"]
+    C3["time-column choice among several dates"]
+    C4["cross-source matches (exact -> rule -> fuzzy)"]
+    C5["metric proposals"]
+  end
+  subgraph HITL["Human approval required"]
+    H1["business names"]
+    H2["inferred / ambiguous links"]
+    H3["time semantics"]
+    H4["business metric definitions + owners"]
+    H5["context answer policy"]
+    H6["low-confidence entity matches"]
+  end
+  subgraph NO["Impossible from data alone"]
+    N1["org ownership not present"]
+    N2["true business intent / policy"]
+    N3["whether a number is a KPI"]
+    N4["data correctness"]
+  end
+  AUTO --> CONF --> HITL --> NO

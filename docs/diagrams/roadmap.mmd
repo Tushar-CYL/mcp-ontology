@@ -1,0 +1,19 @@
+gantt
+  title Better middle layer - research, build, proof
+  dateFormat  YYYY-MM-DD
+  axisFormat  %d %b
+  section Research
+  M0 baseline + env + current-version audit :done, m0, 2026-10-29, 2d
+  L1/L2 research + matrix                  :done, r1, 2026-10-29, 2d
+  L3/L4 research + case studies            :done, r2, 2026-10-29, 2d
+  Synthesis: map, taxonomy, gap, blueprint :active, syn, 2026-10-30, 2d
+  Gate 1 (manager + Arin)                  :crit, gate1, 2026-11-01, 1d
+  section Build
+  Multi-source + schema v2                 :b1, 2026-11-02, 3d
+  Review gate + semantic v2                :b2, after b1, 3d
+  Resolution + Agent Context Builder       :b3, after b2, 3d
+  API / MCP + UI                           :b4, after b3, 2d
+  Acceptance + benchmark                   :b5, after b4, 2d
+  section Proof
+  Scorecard + deck + rehearsal             :p1, after b5, 3d
+  Gate 2 + company presentation            :crit, gate2, after p1, 1d

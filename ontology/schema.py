@@ -40,6 +40,9 @@ class Table:
     primary_key: list[str] = field(default_factory=list)
     foreign_keys: list[ForeignKey] = field(default_factory=list)
     row_count: int | None = None
+    # A lookup table (relations, triples) that must be materialised but is not
+    # itself a kind of thing. Hidden tables do not become classes or nodes.
+    hidden: bool = False
 
     def column(self, name: str) -> Column | None:
         lowered = name.lower()
@@ -64,6 +67,14 @@ class Schema:
     name: str = "source"
     origin: str = ""
     readers: dict = field(default_factory=dict)
+    # Things a reader chose to skip rather than fail on: an unreadable file, a
+    # malformed row, a dropped table. A thin schema with warnings is a better
+    # answer than a crash, and the warnings travel to the UI and the report.
+    warnings: list[str] = field(default_factory=list)
+    # Set when the source is a triple store folder (entities/relations/*.txt).
+    # The generic pipeline builds Entity nodes; a small extra pass in
+    # knowledge_graph.build turns the triples into typed edges.
+    triples: dict | None = None
 
     def table(self, name: str) -> Table | None:
         lowered = name.lower()

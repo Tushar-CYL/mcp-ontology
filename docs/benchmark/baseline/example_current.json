@@ -1,0 +1,94 @@
+{
+  "tool": "benchmark.py",
+  "generated_at": "2026-10-29T17:34:01+00:00",
+  "source": "data\\example.db",
+  "fixture": null,
+  "fixture_generated": false,
+  "python": "3.14.7",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "stages": {
+    "connect": {
+      "ok": true,
+      "seconds": 0.193196,
+      "tables": 4,
+      "rows": 21,
+      "formats": {
+        "database": 4
+      },
+      "name": "example"
+    },
+    "discover": {
+      "ok": true,
+      "seconds": 0.002722,
+      "classes": 4,
+      "relations": 3,
+      "measured_relations": 3,
+      "derived_relations": 0,
+      "renamed_classes": 0
+    },
+    "graph": {
+      "ok": true,
+      "open_seconds": 0.045428,
+      "cold_build_seconds": 0.367048,
+      "nodes": 21,
+      "edges": 21,
+      "skipped_edges": 0,
+      "dangling_edges": 0,
+      "dangling_check_seconds": 0.003914,
+      "findings": 0,
+      "file_bytes": 3682304,
+      "file_mib": 3.512,
+      "path": "data\\bench_graphs\\bench_data_example_db.duckdb",
+      "warm_reopen_seconds": 0.051849,
+      "is_current_warm": true,
+      "warm_nodes": 21,
+      "warm_edges": 21,
+      "warm_query_ok": false,
+      "warm_query_error": "CatalogException: Catalog Error: Table with name \"s.order_lines\" does not exist because schema \"s\" does not exist.\n\nLINE 2: FROM s.\"order_lines\"\n             ^^^^^^^^^^^^^^^"
+    },
+    "semantic": {
+      "ok": true,
+      "discover_seconds": 0.000102,
+      "discovered": 22,
+      "compile_seconds": 0.092197,
+      "compiled": 22,
+      "compile_failures": 0,
+      "executed": 22,
+      "execute_failures": 0,
+      "sample_metric": "quantity_sum",
+      "sample_metric_title": "sum of quantity in OrderLine",
+      "sample_rows": 1,
+      "query_runs": 20,
+      "query_p50_ms": 1.879,
+      "query_p95_ms": 2.468,
+      "query_min_ms": 1.285,
+      "query_max_ms": 2.668,
+      "sample_sql": "SELECT sum(\"quantity\") AS value\nFROM s.\"order_lines\"\nLIMIT 100"
+    },
+    "context": {
+      "ok": true,
+      "seconds": 0.021016,
+      "class": "Customer",
+      "key": "2",
+      "facts_gathered": 5,
+      "facts_kept": 5,
+      "chars": 195
+    }
+  },
+  "errors": [],
+  "findings": [
+    {
+      "stage": "warm reopen",
+      "finding": "is_current() is True, but the sample metric cannot run on the reopened graph without rebuilding: the source is not re-attached to the new connection. This is the cached path a second app/run.py process takes.",
+      "error": "CatalogException: Catalog Error: Table with name \"s.order_lines\" does not exist because schema \"s\" does not exist.\n\nLINE 2: FROM s.\"order_lines\"\n             ^^^^^^^^^^^^^^^"
+    }
+  ],
+  "limits": {
+    "query_runs": 20,
+    "query_warmup": 3,
+    "execute_limit": 25,
+    "context_budget_chars": 900
+  },
+  "duckdb": "2.0.0",
+  "total_seconds": 0.902605
+}

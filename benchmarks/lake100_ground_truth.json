@@ -1,0 +1,3132 @@
+{
+  "fixture": "lake100",
+  "generator_version": "lake100-v1",
+  "seed": 20241029,
+  "table_count": 100,
+  "counts": {
+    "tables": 100,
+    "rows": 4864,
+    "formats": {
+      "csv": 69,
+      "parquet": 20,
+      "json": 11
+    },
+    "domains": {
+      "sales": 29,
+      "inventory": 25,
+      "crm": 24,
+      "finance": 22
+    },
+    "key_kinds": {
+      "natural": 64,
+      "composite": 9,
+      "none": 27
+    },
+    "tables_with_fk_columns": 75,
+    "tables_with_no_usable_key": 36,
+    "tables_with_reserved_word_columns": 12,
+    "tables_with_non_ascii_values": 29
+  },
+  "tables": [
+    {
+      "name": "crm_accounts",
+      "file": "crm_accounts.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 50,
+      "class": "CrmAccount",
+      "declared_key": null,
+      "expected_key": [
+        "account_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "account_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_activities",
+      "file": "crm_activities.parquet",
+      "domain": "crm",
+      "format": "parquet",
+      "rows": 95,
+      "class": "CrmActivity",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "crm_calls",
+      "file": "crm_calls.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 52,
+      "class": "CrmCall",
+      "declared_key": null,
+      "expected_key": [
+        "call_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "call_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_campaigns",
+      "file": "crm_campaigns.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 22,
+      "class": "CrmCampaign",
+      "declared_key": null,
+      "expected_key": [
+        "campaign_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "campaign_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_cases",
+      "file": "crm_cases.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 40,
+      "class": "CrmCas",
+      "declared_key": null,
+      "expected_key": [
+        "case_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "case_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_churn_scores",
+      "file": "crm_churn_scores.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 64,
+      "class": "CrmChurnScore",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "crm_consents",
+      "file": "crm_consents.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 60,
+      "class": "CrmConsent",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "crm_contacts",
+      "file": "crm_contacts.parquet",
+      "domain": "crm",
+      "format": "parquet",
+      "rows": 80,
+      "class": "CrmContact",
+      "declared_key": null,
+      "expected_key": [
+        "contact_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "contact_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_customer_profiles",
+      "file": "crm_customer_profiles.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 46,
+      "class": "CrmCustomerProfile",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "crm_emails",
+      "file": "crm_emails.parquet",
+      "domain": "crm",
+      "format": "parquet",
+      "rows": 75,
+      "class": "CrmEmail",
+      "declared_key": null,
+      "expected_key": [
+        "email_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "email_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_loyalty",
+      "file": "crm_loyalty.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 42,
+      "class": "CrmLoyalty",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "crm_meetings",
+      "file": "crm_meetings.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 30,
+      "class": "CrmMeeting",
+      "declared_key": null,
+      "expected_key": [
+        "meeting_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "meeting_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_notes",
+      "file": "crm_notes.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 85,
+      "class": "CrmNote",
+      "declared_key": null,
+      "expected_key": [
+        "note_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "note_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_nps",
+      "file": "crm_nps.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 58,
+      "class": "CrmNp",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "crm_opportunities",
+      "file": "crm_opportunities.parquet",
+      "domain": "crm",
+      "format": "parquet",
+      "rows": 45,
+      "class": "CrmOpportunity",
+      "declared_key": null,
+      "expected_key": [
+        "opportunity_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "opportunity_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_owners",
+      "file": "crm_owners.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 14,
+      "class": "CrmOwner",
+      "declared_key": null,
+      "expected_key": [
+        "owner_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "owner_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_prospects",
+      "file": "crm_prospects.json",
+      "domain": "crm",
+      "format": "json",
+      "rows": 48,
+      "class": "CrmProspect",
+      "declared_key": null,
+      "expected_key": [
+        "prospect_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "prospect_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_segments",
+      "file": "crm_segments.json",
+      "domain": "crm",
+      "format": "json",
+      "rows": 16,
+      "class": "CrmSegment",
+      "declared_key": null,
+      "expected_key": [
+        "segment_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "segment_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_subscriptions",
+      "file": "crm_subscriptions.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 55,
+      "class": "CrmSubscription",
+      "declared_key": null,
+      "expected_key": [
+        "subscription_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "subscription_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "crm_ticket_events",
+      "file": "crm_ticket_events.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 88,
+      "class": "CrmTicketEvent",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "composite",
+      "intended_key": [
+        "ticket_id",
+        "event_no"
+      ],
+      "key_note": "a file cannot declare a composite key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "crm_tickets",
+      "file": "crm_tickets.parquet",
+      "domain": "crm",
+      "format": "parquet",
+      "rows": 70,
+      "class": "CrmTicket",
+      "declared_key": null,
+      "expected_key": [
+        "ticket_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "ticket_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "customers",
+      "file": "customers.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 60,
+      "class": "Customer",
+      "declared_key": null,
+      "expected_key": [
+        "customer_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "customer_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "dim_account_v2",
+      "file": "dim_account_v2.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 28,
+      "class": "Account",
+      "declared_key": null,
+      "expected_key": [
+        "account_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "account_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "dim_warehouse_v2",
+      "file": "dim_warehouse_v2.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 15,
+      "class": "Warehouse",
+      "declared_key": null,
+      "expected_key": [
+        "warehouse_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "warehouse_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "erp_products",
+      "file": "erp_products.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 30,
+      "class": "ErpProduct",
+      "declared_key": null,
+      "expected_key": [
+        "product_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "product_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "fct_engagement_2024",
+      "file": "fct_engagement_2024.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 68,
+      "class": "Engagement",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "fct_revenue_2024",
+      "file": "fct_revenue_2024.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 62,
+      "class": "Revenue",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "fct_sales_2024",
+      "file": "fct_sales_2024.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 62,
+      "class": "Sale",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "fct_stock_snapshot_2024",
+      "file": "fct_stock_snapshot_2024.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 60,
+      "class": "StockSnapshot",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "finance_actuals",
+      "file": "finance_actuals.parquet",
+      "domain": "finance",
+      "format": "parquet",
+      "rows": 64,
+      "class": "FinanceActual",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "finance_ap_invoices",
+      "file": "finance_ap_invoices.parquet",
+      "domain": "finance",
+      "format": "parquet",
+      "rows": 50,
+      "class": "FinanceApInvoice",
+      "declared_key": null,
+      "expected_key": [
+        "ap_invoice_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "ap_invoice_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "finance_ar_invoices",
+      "file": "finance_ar_invoices.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 54,
+      "class": "FinanceArInvoice",
+      "declared_key": null,
+      "expected_key": [
+        "ar_invoice_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "ar_invoice_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "finance_assets",
+      "file": "finance_assets.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 36,
+      "class": "FinanceAsset",
+      "declared_key": null,
+      "expected_key": [
+        "asset_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "asset_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "finance_balance_snapshot",
+      "file": "finance_balance_snapshot.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 60,
+      "class": "FinanceBalanceSnapshot",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "finance_budgets",
+      "file": "finance_budgets.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 48,
+      "class": "FinanceBudget",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "finance_cashflow",
+      "file": "finance_cashflow.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 48,
+      "class": "FinanceCashflow",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "finance_chart_of_accounts",
+      "file": "finance_chart_of_accounts.json",
+      "domain": "finance",
+      "format": "json",
+      "rows": 40,
+      "class": "FinanceChartOfAccount",
+      "declared_key": null,
+      "expected_key": [
+        "account_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "account_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "finance_cost_centers",
+      "file": "finance_cost_centers.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 18,
+      "class": "FinanceCostCenter",
+      "declared_key": null,
+      "expected_key": [
+        "cost_center_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "cost_center_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "finance_credit_notes",
+      "file": "finance_credit_notes.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 32,
+      "class": "FinanceCreditNote",
+      "declared_key": null,
+      "expected_key": [
+        "credit_note_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "credit_note_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "finance_depreciation",
+      "file": "finance_depreciation.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 44,
+      "class": "FinanceDepreciation",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "finance_exchange_rates",
+      "file": "finance_exchange_rates.json",
+      "domain": "finance",
+      "format": "json",
+      "rows": 40,
+      "class": "FinanceExchangeRate",
+      "declared_key": null,
+      "expected_key": [
+        "rate_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "rate_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "finance_gl_entries",
+      "file": "finance_gl_entries.parquet",
+      "domain": "finance",
+      "format": "parquet",
+      "rows": 100,
+      "class": "FinanceGlEntry",
+      "declared_key": null,
+      "expected_key": [
+        "entry_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "entry_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "finance_journal_lines",
+      "file": "finance_journal_lines.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 72,
+      "class": "FinanceJournalLine",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "composite",
+      "intended_key": [
+        "journal_id",
+        "line_no"
+      ],
+      "key_note": "a file cannot declare a composite key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "finance_periods",
+      "file": "finance_periods.json",
+      "domain": "finance",
+      "format": "json",
+      "rows": 14,
+      "class": "FinancePeriod",
+      "declared_key": null,
+      "expected_key": [
+        "period_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "period_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "finance_po_lines",
+      "file": "finance_po_lines.parquet",
+      "domain": "finance",
+      "format": "parquet",
+      "rows": 76,
+      "class": "FinancePoLine",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "composite",
+      "intended_key": [
+        "po_id",
+        "line_no"
+      ],
+      "key_note": "a file cannot declare a composite key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "finance_purchase_orders",
+      "file": "finance_purchase_orders.parquet",
+      "domain": "finance",
+      "format": "parquet",
+      "rows": 58,
+      "class": "FinancePurchaseOrder",
+      "declared_key": null,
+      "expected_key": [
+        "po_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "po_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "finance_tax_rates",
+      "file": "finance_tax_rates.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 24,
+      "class": "FinanceTaxRate",
+      "declared_key": null,
+      "expected_key": [
+        "tax_rate_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "tax_rate_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "finance_vat_returns",
+      "file": "finance_vat_returns.json",
+      "domain": "finance",
+      "format": "json",
+      "rows": 20,
+      "class": "FinanceVatReturn",
+      "declared_key": null,
+      "expected_key": [
+        "vat_return_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "vat_return_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_adjustments",
+      "file": "inventory_adjustments.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 36,
+      "class": "InventoryAdjustment",
+      "declared_key": null,
+      "expected_key": [
+        "adjustment_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "adjustment_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_aging",
+      "file": "inventory_aging.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 46,
+      "class": "InventoryAging",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "inventory_allocations",
+      "file": "inventory_allocations.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 60,
+      "class": "InventoryAllocation",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "composite",
+      "intended_key": [
+        "order_id",
+        "product_id"
+      ],
+      "key_note": "a file cannot declare a composite key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "inventory_backorders",
+      "file": "inventory_backorders.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 44,
+      "class": "InventoryBackorder",
+      "declared_key": null,
+      "expected_key": [
+        "backorder_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "backorder_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_batches",
+      "file": "inventory_batches.parquet",
+      "domain": "inventory",
+      "format": "parquet",
+      "rows": 55,
+      "class": "InventoryBatch",
+      "declared_key": null,
+      "expected_key": [
+        "batch_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "batch_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_bins",
+      "file": "inventory_bins.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 30,
+      "class": "InventoryBin",
+      "declared_key": null,
+      "expected_key": [
+        "bin_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "bin_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_cycle_counts",
+      "file": "inventory_cycle_counts.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 40,
+      "class": "InventoryCycleCount",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "inventory_damage",
+      "file": "inventory_damage.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 26,
+      "class": "InventoryDamage",
+      "declared_key": null,
+      "expected_key": [
+        "damage_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "damage_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_demand",
+      "file": "inventory_demand.parquet",
+      "domain": "inventory",
+      "format": "parquet",
+      "rows": 50,
+      "class": "InventoryDemand",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "inventory_movements",
+      "file": "inventory_movements.parquet",
+      "domain": "inventory",
+      "format": "parquet",
+      "rows": 90,
+      "class": "InventoryMovement",
+      "declared_key": null,
+      "expected_key": [
+        "movement_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "movement_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_picking",
+      "file": "inventory_picking.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 66,
+      "class": "InventoryPicking",
+      "declared_key": null,
+      "expected_key": [
+        "pick_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "pick_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_putaway",
+      "file": "inventory_putaway.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 48,
+      "class": "InventoryPutaway",
+      "declared_key": null,
+      "expected_key": [
+        "putaway_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "putaway_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_receipt_lines",
+      "file": "inventory_receipt_lines.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 70,
+      "class": "InventoryReceiptLine",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "composite",
+      "intended_key": [
+        "receipt_id",
+        "line_no"
+      ],
+      "key_note": "a file cannot declare a composite key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "inventory_receipts",
+      "file": "inventory_receipts.parquet",
+      "domain": "inventory",
+      "format": "parquet",
+      "rows": 45,
+      "class": "InventoryReceipt",
+      "declared_key": null,
+      "expected_key": [
+        "receipt_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "receipt_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_reorder",
+      "file": "inventory_reorder.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 38,
+      "class": "InventoryReorder",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "inventory_returns",
+      "file": "inventory_returns.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 40,
+      "class": "InventoryReturn",
+      "declared_key": null,
+      "expected_key": [
+        "inv_return_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "inv_return_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_serials",
+      "file": "inventory_serials.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 34,
+      "class": "InventorySerial",
+      "declared_key": null,
+      "expected_key": [
+        "serial_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "serial_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_stock",
+      "file": "inventory_stock.parquet",
+      "domain": "inventory",
+      "format": "parquet",
+      "rows": 64,
+      "class": "InventoryStock",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "composite",
+      "intended_key": [
+        "warehouse_id",
+        "product_id"
+      ],
+      "key_note": "a file cannot declare a composite key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "inventory_suppliers",
+      "file": "inventory_suppliers.json",
+      "domain": "inventory",
+      "format": "json",
+      "rows": 20,
+      "class": "InventorySupplier",
+      "declared_key": null,
+      "expected_key": [
+        "supplier_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "supplier_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_transfers",
+      "file": "inventory_transfers.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 42,
+      "class": "InventoryTransfer",
+      "declared_key": null,
+      "expected_key": [
+        "transfer_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "transfer_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "inventory_warehouses",
+      "file": "inventory_warehouses.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 12,
+      "class": "InventoryWarehous",
+      "declared_key": null,
+      "expected_key": [
+        "warehouse_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "warehouse_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "marketplace_products",
+      "file": "marketplace_products.json",
+      "domain": "sales",
+      "format": "json",
+      "rows": 15,
+      "class": "MarketplaceProduct",
+      "declared_key": null,
+      "expected_key": [
+        "product_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "product_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "order_items",
+      "file": "order_items.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 120,
+      "class": "OrderItem",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "composite",
+      "intended_key": [
+        "order_id",
+        "line_no"
+      ],
+      "key_note": "a file cannot declare a composite key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "orders",
+      "file": "orders.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 90,
+      "class": "Order",
+      "declared_key": null,
+      "expected_key": [
+        "order_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "order_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "pim_products",
+      "file": "pim_products.parquet",
+      "domain": "sales",
+      "format": "parquet",
+      "rows": 20,
+      "class": "PimProduct",
+      "declared_key": null,
+      "expected_key": [
+        "product_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "product_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_budget_lines",
+      "file": "sales_budget_lines.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 36,
+      "class": "SalesBudgetLine",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "composite",
+      "intended_key": [
+        "budget_id",
+        "line_no"
+      ],
+      "key_note": "a file cannot declare a composite key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "sales_channels",
+      "file": "sales_channels.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 12,
+      "class": "SalesChannel",
+      "declared_key": null,
+      "expected_key": [
+        "channel_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "channel_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_commissions",
+      "file": "sales_commissions.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 44,
+      "class": "SalesCommission",
+      "declared_key": null,
+      "expected_key": [
+        "commission_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "commission_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_daily_rollup",
+      "file": "sales_daily_rollup.parquet",
+      "domain": "sales",
+      "format": "parquet",
+      "rows": 60,
+      "class": "SalesDailyRollup",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "sales_discounts",
+      "file": "sales_discounts.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 30,
+      "class": "SalesDiscount",
+      "declared_key": null,
+      "expected_key": [
+        "discount_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "discount_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_events",
+      "file": "sales_events.json",
+      "domain": "sales",
+      "format": "json",
+      "rows": 58,
+      "class": "SalesEvent",
+      "declared_key": null,
+      "expected_key": [
+        "event_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "event_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_forecast",
+      "file": "sales_forecast.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 45,
+      "class": "SalesForecast",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "sales_invoices",
+      "file": "sales_invoices.parquet",
+      "domain": "sales",
+      "format": "parquet",
+      "rows": 55,
+      "class": "SalesInvoice",
+      "declared_key": null,
+      "expected_key": [
+        "invoice_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "invoice_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_leads",
+      "file": "sales_leads.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 65,
+      "class": "SalesLead",
+      "declared_key": null,
+      "expected_key": [
+        "lead_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "lead_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_payments",
+      "file": "sales_payments.parquet",
+      "domain": "sales",
+      "format": "parquet",
+      "rows": 70,
+      "class": "SalesPayment",
+      "declared_key": null,
+      "expected_key": [
+        "payment_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "payment_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_pipeline",
+      "file": "sales_pipeline.parquet",
+      "domain": "sales",
+      "format": "parquet",
+      "rows": 52,
+      "class": "SalesPipeline",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "sales_quote_lines",
+      "file": "sales_quote_lines.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 48,
+      "class": "SalesQuoteLine",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "composite",
+      "intended_key": [
+        "quote_id",
+        "line_no"
+      ],
+      "key_note": "a file cannot declare a composite key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "sales_quotes",
+      "file": "sales_quotes.json",
+      "domain": "sales",
+      "format": "json",
+      "rows": 40,
+      "class": "SalesQuote",
+      "declared_key": null,
+      "expected_key": [
+        "quote_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "quote_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_refunds",
+      "file": "sales_refunds.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 33,
+      "class": "SalesRefund",
+      "declared_key": null,
+      "expected_key": [
+        "refund_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "refund_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_regions",
+      "file": "sales_regions.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 12,
+      "class": "SalesRegion",
+      "declared_key": null,
+      "expected_key": [
+        "region_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "region_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_returns",
+      "file": "sales_returns.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 35,
+      "class": "SalesReturn",
+      "declared_key": null,
+      "expected_key": [
+        "return_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "return_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_segments",
+      "file": "sales_segments.json",
+      "domain": "sales",
+      "format": "json",
+      "rows": 14,
+      "class": "SalesSegment",
+      "declared_key": null,
+      "expected_key": [
+        "segment_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "segment_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_shipments",
+      "file": "sales_shipments.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 50,
+      "class": "SalesShipment",
+      "declared_key": null,
+      "expected_key": [
+        "shipment_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "shipment_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "sales_targets",
+      "file": "sales_targets.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 40,
+      "class": "SalesTarget",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "sales_targets_v2",
+      "file": "sales_targets_v2.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 38,
+      "class": "SalesTarget2",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "stg_finance_raw",
+      "file": "stg_finance_raw.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 84,
+      "class": "Finance",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "stg_inventory_raw",
+      "file": "stg_inventory_raw.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 72,
+      "class": "Inventory",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "stg_orders_raw",
+      "file": "stg_orders_raw.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 80,
+      "class": "Order2",
+      "declared_key": null,
+      "expected_key": [
+        "__row"
+      ],
+      "key_kind": "none",
+      "intended_key": [],
+      "key_note": "no single usable key; current discovery falls back to the synthetic __row"
+    },
+    {
+      "name": "tbl_contact_01",
+      "file": "tbl_contact_01.csv",
+      "domain": "crm",
+      "format": "csv",
+      "rows": 44,
+      "class": "Contact",
+      "declared_key": null,
+      "expected_key": [
+        "contact_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "contact_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "tbl_cust_01",
+      "file": "tbl_cust_01.csv",
+      "domain": "sales",
+      "format": "csv",
+      "rows": 36,
+      "class": "Cust",
+      "declared_key": null,
+      "expected_key": [
+        "cust_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "cust_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "tbl_ledger_01",
+      "file": "tbl_ledger_01.csv",
+      "domain": "finance",
+      "format": "csv",
+      "rows": 56,
+      "class": "Ledger",
+      "declared_key": null,
+      "expected_key": [
+        "ledger_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "ledger_id"
+      ],
+      "key_note": "natural key inferred from data"
+    },
+    {
+      "name": "tbl_stock_01",
+      "file": "tbl_stock_01.csv",
+      "domain": "inventory",
+      "format": "csv",
+      "rows": 36,
+      "class": "Stock",
+      "declared_key": null,
+      "expected_key": [
+        "stock_id"
+      ],
+      "key_kind": "natural",
+      "intended_key": [
+        "stock_id"
+      ],
+      "key_note": "natural key inferred from data"
+    }
+  ],
+  "expected_relations": [
+    {
+      "domain_table": "crm_activities",
+      "column": "contact_id",
+      "range_table": "tbl_contact_01",
+      "domain_class": "CrmActivity",
+      "range_class": "Contact",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_activities",
+      "column": "owner",
+      "range_table": "crm_owners",
+      "domain_class": "CrmActivity",
+      "range_class": "CrmOwner",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_calls",
+      "column": "contact_id",
+      "range_table": "tbl_contact_01",
+      "domain_class": "CrmCall",
+      "range_class": "Contact",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_campaigns",
+      "column": "budget",
+      "range_table": "finance_budgets",
+      "domain_class": "CrmCampaign",
+      "range_class": "FinanceBudget",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_campaigns",
+      "column": "channel",
+      "range_table": "sales_channels",
+      "domain_class": "CrmCampaign",
+      "range_class": "SalesChannel",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_cases",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "CrmCas",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_churn_scores",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "CrmChurnScore",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_consents",
+      "column": "contact_id",
+      "range_table": "tbl_contact_01",
+      "domain_class": "CrmConsent",
+      "range_class": "Contact",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_contacts",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "CrmContact",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_customer_profiles",
+      "column": "customer_id",
+      "range_table": "customers",
+      "domain_class": "CrmCustomerProfile",
+      "range_class": "Customer",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_customer_profiles",
+      "column": "segment_id",
+      "range_table": "crm_segments",
+      "domain_class": "CrmCustomerProfile",
+      "range_class": "CrmSegment",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_emails",
+      "column": "campaign_id",
+      "range_table": "crm_campaigns",
+      "domain_class": "CrmEmail",
+      "range_class": "CrmCampaign",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_emails",
+      "column": "contact_id",
+      "range_table": "tbl_contact_01",
+      "domain_class": "CrmEmail",
+      "range_class": "Contact",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_loyalty",
+      "column": "customer_id",
+      "range_table": "customers",
+      "domain_class": "CrmLoyalty",
+      "range_class": "Customer",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_meetings",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "CrmMeeting",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_meetings",
+      "column": "contact_id",
+      "range_table": "tbl_contact_01",
+      "domain_class": "CrmMeeting",
+      "range_class": "Contact",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_meetings",
+      "column": "notes",
+      "range_table": "crm_notes",
+      "domain_class": "CrmMeeting",
+      "range_class": "CrmNote",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_notes",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "CrmNote",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_notes",
+      "column": "contact_id",
+      "range_table": "tbl_contact_01",
+      "domain_class": "CrmNote",
+      "range_class": "Contact",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_nps",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "CrmNp",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_nps",
+      "column": "score",
+      "range_table": "crm_churn_scores",
+      "domain_class": "CrmNp",
+      "range_class": "CrmChurnScore",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_opportunities",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "CrmOpportunity",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_opportunities",
+      "column": "contact_id",
+      "range_table": "tbl_contact_01",
+      "domain_class": "CrmOpportunity",
+      "range_class": "Contact",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_owners",
+      "column": "region_id",
+      "range_table": "sales_regions",
+      "domain_class": "CrmOwner",
+      "range_class": "SalesRegion",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_subscriptions",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "CrmSubscription",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_ticket_events",
+      "column": "note",
+      "range_table": "crm_notes",
+      "domain_class": "CrmTicketEvent",
+      "range_class": "CrmNote",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_ticket_events",
+      "column": "ticket_id",
+      "range_table": "crm_tickets",
+      "domain_class": "CrmTicketEvent",
+      "range_class": "CrmTicket",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_tickets",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "CrmTicket",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "crm_tickets",
+      "column": "contact_id",
+      "range_table": "tbl_contact_01",
+      "domain_class": "CrmTicket",
+      "range_class": "Contact",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "fct_engagement_2024",
+      "column": "campaign_id",
+      "range_table": "crm_campaigns",
+      "domain_class": "Engagement",
+      "range_class": "CrmCampaign",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "fct_engagement_2024",
+      "column": "contact_id",
+      "range_table": "tbl_contact_01",
+      "domain_class": "Engagement",
+      "range_class": "Contact",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "fct_engagement_2024",
+      "column": "score",
+      "range_table": "crm_churn_scores",
+      "domain_class": "Engagement",
+      "range_class": "CrmChurnScore",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "fct_revenue_2024",
+      "column": "customer_id",
+      "range_table": "customers",
+      "domain_class": "Revenue",
+      "range_class": "Customer",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "fct_revenue_2024",
+      "column": "order",
+      "range_table": "orders",
+      "domain_class": "Revenue",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "fct_revenue_2024",
+      "column": "region_id",
+      "range_table": "sales_regions",
+      "domain_class": "Revenue",
+      "range_class": "SalesRegion",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "fct_sales_2024",
+      "column": "customer_id",
+      "range_table": "customers",
+      "domain_class": "Sale",
+      "range_class": "Customer",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "fct_sales_2024",
+      "column": "order",
+      "range_table": "orders",
+      "domain_class": "Sale",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "fct_sales_2024",
+      "column": "region_id",
+      "range_table": "sales_regions",
+      "domain_class": "Sale",
+      "range_class": "SalesRegion",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "fct_sales_2024",
+      "column": "revenue",
+      "range_table": "fct_revenue_2024",
+      "domain_class": "Sale",
+      "range_class": "Revenue",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "fct_stock_snapshot_2024",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "StockSnapshot",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "fct_stock_snapshot_2024",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "StockSnapshot",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_actuals",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "FinanceActual",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_actuals",
+      "column": "cost_center_id",
+      "range_table": "finance_cost_centers",
+      "domain_class": "FinanceActual",
+      "range_class": "FinanceCostCenter",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_actuals",
+      "column": "period",
+      "range_table": "finance_periods",
+      "domain_class": "FinanceActual",
+      "range_class": "FinancePeriod",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_ap_invoices",
+      "column": "supplier_id",
+      "range_table": "inventory_suppliers",
+      "domain_class": "FinanceApInvoice",
+      "range_class": "InventorySupplier",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_ar_invoices",
+      "column": "customer_id",
+      "range_table": "customers",
+      "domain_class": "FinanceArInvoice",
+      "range_class": "Customer",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_assets",
+      "column": "cost_center_id",
+      "range_table": "finance_cost_centers",
+      "domain_class": "FinanceAsset",
+      "range_class": "FinanceCostCenter",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_balance_snapshot",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "FinanceBalanceSnapshot",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_balance_snapshot",
+      "column": "period",
+      "range_table": "finance_periods",
+      "domain_class": "FinanceBalanceSnapshot",
+      "range_class": "FinancePeriod",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_budgets",
+      "column": "cost_center_id",
+      "range_table": "finance_cost_centers",
+      "domain_class": "FinanceBudget",
+      "range_class": "FinanceCostCenter",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_budgets",
+      "column": "period",
+      "range_table": "finance_periods",
+      "domain_class": "FinanceBudget",
+      "range_class": "FinancePeriod",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_cashflow",
+      "column": "cost_center_id",
+      "range_table": "finance_cost_centers",
+      "domain_class": "FinanceCashflow",
+      "range_class": "FinanceCostCenter",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_cashflow",
+      "column": "period",
+      "range_table": "finance_periods",
+      "domain_class": "FinanceCashflow",
+      "range_class": "FinancePeriod",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_chart_of_accounts",
+      "column": "account_code",
+      "range_table": "dim_account_v2",
+      "domain_class": "FinanceChartOfAccount",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_cost_centers",
+      "column": "region_id",
+      "range_table": "sales_regions",
+      "domain_class": "FinanceCostCenter",
+      "range_class": "SalesRegion",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_credit_notes",
+      "column": "customer_id",
+      "range_table": "customers",
+      "domain_class": "FinanceCreditNote",
+      "range_class": "Customer",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_depreciation",
+      "column": "asset_id",
+      "range_table": "finance_assets",
+      "domain_class": "FinanceDepreciation",
+      "range_class": "FinanceAsset",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_gl_entries",
+      "column": "account_code",
+      "range_table": "dim_account_v2",
+      "domain_class": "FinanceGlEntry",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_gl_entries",
+      "column": "period",
+      "range_table": "finance_periods",
+      "domain_class": "FinanceGlEntry",
+      "range_class": "FinancePeriod",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_journal_lines",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "FinanceJournalLine",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_po_lines",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "FinancePoLine",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_purchase_orders",
+      "column": "cost_center_id",
+      "range_table": "finance_cost_centers",
+      "domain_class": "FinancePurchaseOrder",
+      "range_class": "FinanceCostCenter",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_purchase_orders",
+      "column": "supplier_id",
+      "range_table": "inventory_suppliers",
+      "domain_class": "FinancePurchaseOrder",
+      "range_class": "InventorySupplier",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_vat_returns",
+      "column": "period",
+      "range_table": "finance_periods",
+      "domain_class": "FinanceVatReturn",
+      "range_class": "FinancePeriod",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_adjustments",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryAdjustment",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_adjustments",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "InventoryAdjustment",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_aging",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryAging",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_aging",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "InventoryAging",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_allocations",
+      "column": "order_id",
+      "range_table": "orders",
+      "domain_class": "InventoryAllocation",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_allocations",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryAllocation",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_allocations",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "InventoryAllocation",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_backorders",
+      "column": "order_id",
+      "range_table": "orders",
+      "domain_class": "InventoryBackorder",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_backorders",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryBackorder",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_batches",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryBatch",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_bins",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "InventoryBin",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_cycle_counts",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryCycleCount",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_cycle_counts",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "InventoryCycleCount",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_damage",
+      "column": "note",
+      "range_table": "crm_notes",
+      "domain_class": "InventoryDamage",
+      "range_class": "CrmNote",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_damage",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryDamage",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_damage",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "InventoryDamage",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_demand",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryDemand",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_movements",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryMovement",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_movements",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "InventoryMovement",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_picking",
+      "column": "order_id",
+      "range_table": "orders",
+      "domain_class": "InventoryPicking",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_picking",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "InventoryPicking",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_putaway",
+      "column": "bin_id",
+      "range_table": "inventory_bins",
+      "domain_class": "InventoryPutaway",
+      "range_class": "InventoryBin",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_putaway",
+      "column": "receipt_id",
+      "range_table": "inventory_receipts",
+      "domain_class": "InventoryPutaway",
+      "range_class": "InventoryReceipt",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_receipt_lines",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryReceiptLine",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_receipt_lines",
+      "column": "receipt_id",
+      "range_table": "inventory_receipts",
+      "domain_class": "InventoryReceiptLine",
+      "range_class": "InventoryReceipt",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_receipts",
+      "column": "supplier_id",
+      "range_table": "inventory_suppliers",
+      "domain_class": "InventoryReceipt",
+      "range_class": "InventorySupplier",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_receipts",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "InventoryReceipt",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_reorder",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryReorder",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_reorder",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "InventoryReorder",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_returns",
+      "column": "order_id",
+      "range_table": "orders",
+      "domain_class": "InventoryReturn",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_returns",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryReturn",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_serials",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventorySerial",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_stock",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryStock",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_stock",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "InventoryStock",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_transfers",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "InventoryTransfer",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "inventory_transfers",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "InventoryTransfer",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "marketplace_products",
+      "column": "channel",
+      "range_table": "sales_channels",
+      "domain_class": "MarketplaceProduct",
+      "range_class": "SalesChannel",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "order_items",
+      "column": "order_id",
+      "range_table": "orders",
+      "domain_class": "OrderItem",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "order_items",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "OrderItem",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "orders",
+      "column": "customer_id",
+      "range_table": "customers",
+      "domain_class": "Order",
+      "range_class": "Customer",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_budget_lines",
+      "column": "budget_id",
+      "range_table": "finance_budgets",
+      "domain_class": "SalesBudgetLine",
+      "range_class": "FinanceBudget",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_budget_lines",
+      "column": "channel_id",
+      "range_table": "sales_channels",
+      "domain_class": "SalesBudgetLine",
+      "range_class": "SalesChannel",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_commissions",
+      "column": "order_id",
+      "range_table": "orders",
+      "domain_class": "SalesCommission",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_daily_rollup",
+      "column": "channel_id",
+      "range_table": "sales_channels",
+      "domain_class": "SalesDailyRollup",
+      "range_class": "SalesChannel",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_daily_rollup",
+      "column": "orders",
+      "range_table": "orders",
+      "domain_class": "SalesDailyRollup",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_daily_rollup",
+      "column": "region_id",
+      "range_table": "sales_regions",
+      "domain_class": "SalesDailyRollup",
+      "range_class": "SalesRegion",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_daily_rollup",
+      "column": "revenue",
+      "range_table": "fct_revenue_2024",
+      "domain_class": "SalesDailyRollup",
+      "range_class": "Revenue",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_discounts",
+      "column": "channel_id",
+      "range_table": "sales_channels",
+      "domain_class": "SalesDiscount",
+      "range_class": "SalesChannel",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_events",
+      "column": "customer_id",
+      "range_table": "customers",
+      "domain_class": "SalesEvent",
+      "range_class": "Customer",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_forecast",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "SalesForecast",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_invoices",
+      "column": "customer_id",
+      "range_table": "customers",
+      "domain_class": "SalesInvoice",
+      "range_class": "Customer",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_invoices",
+      "column": "order_id",
+      "range_table": "orders",
+      "domain_class": "SalesInvoice",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_payments",
+      "column": "order_id",
+      "range_table": "orders",
+      "domain_class": "SalesPayment",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_pipeline",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "SalesPipeline",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_quote_lines",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "SalesQuoteLine",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_quote_lines",
+      "column": "quote_id",
+      "range_table": "sales_quotes",
+      "domain_class": "SalesQuoteLine",
+      "range_class": "SalesQuote",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_quotes",
+      "column": "customer_id",
+      "range_table": "customers",
+      "domain_class": "SalesQuote",
+      "range_class": "Customer",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_quotes",
+      "column": "order",
+      "range_table": "orders",
+      "domain_class": "SalesQuote",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_refunds",
+      "column": "payment_id",
+      "range_table": "sales_payments",
+      "domain_class": "SalesRefund",
+      "range_class": "SalesPayment",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_returns",
+      "column": "order_id",
+      "range_table": "orders",
+      "domain_class": "SalesReturn",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_shipments",
+      "column": "order_id",
+      "range_table": "orders",
+      "domain_class": "SalesShipment",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_targets",
+      "column": "region_id",
+      "range_table": "sales_regions",
+      "domain_class": "SalesTarget",
+      "range_class": "SalesRegion",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_targets_v2",
+      "column": "actual",
+      "range_table": "finance_actuals",
+      "domain_class": "SalesTarget2",
+      "range_class": "FinanceActual",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "sales_targets_v2",
+      "column": "region_id",
+      "range_table": "sales_regions",
+      "domain_class": "SalesTarget2",
+      "range_class": "SalesRegion",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "stg_finance_raw",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "Finance",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "stg_finance_raw",
+      "column": "period",
+      "range_table": "finance_periods",
+      "domain_class": "Finance",
+      "range_class": "FinancePeriod",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "stg_inventory_raw",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "Inventory",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "stg_inventory_raw",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "Inventory",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "stg_orders_raw",
+      "column": "customer_id",
+      "range_table": "customers",
+      "domain_class": "Order2",
+      "range_class": "Customer",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "stg_orders_raw",
+      "column": "order_id",
+      "range_table": "orders",
+      "domain_class": "Order2",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "tbl_contact_01",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "Contact",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "tbl_contact_01",
+      "column": "order",
+      "range_table": "orders",
+      "domain_class": "Contact",
+      "range_class": "Order",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "tbl_cust_01",
+      "column": "segment",
+      "range_table": "crm_segments",
+      "domain_class": "Cust",
+      "range_class": "CrmSegment",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "tbl_ledger_01",
+      "column": "account_id",
+      "range_table": "dim_account_v2",
+      "domain_class": "Ledger",
+      "range_class": "Account",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "tbl_ledger_01",
+      "column": "period",
+      "range_table": "finance_periods",
+      "domain_class": "Ledger",
+      "range_class": "FinancePeriod",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "tbl_stock_01",
+      "column": "product_id",
+      "range_table": "erp_products",
+      "domain_class": "Stock",
+      "range_class": "ErpProduct",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "tbl_stock_01",
+      "column": "warehouse_id",
+      "range_table": "dim_warehouse_v2",
+      "domain_class": "Stock",
+      "range_class": "Warehouse",
+      "provenance": "derived"
+    }
+  ],
+  "product_masters": {
+    "tables": [
+      "erp_products.csv",
+      "pim_products.parquet",
+      "marketplace_products.json"
+    ],
+    "shared_key": "product_id",
+    "coverage_rows": {
+      "erp_products": 30,
+      "pim_products": 20,
+      "marketplace_products": 15
+    },
+    "expected_classes": {
+      "erp_products": "ErpProduct",
+      "pim_products": "PimProduct",
+      "marketplace_products": "MarketplaceProduct"
+    },
+    "note": "Same product_id space, different attributes and coverage. Current single-source discovery models them as three separate classes and does not merge them; only the first product-named table in folder order receives product_id edges."
+  },
+  "special_cases": {
+    "reserved_word_columns": {
+      "crm_cases": [
+        "select"
+      ],
+      "crm_segments": [
+        "group"
+      ],
+      "crm_tickets": [
+        "group"
+      ],
+      "fct_revenue_2024": [
+        "order"
+      ],
+      "fct_sales_2024": [
+        "order"
+      ],
+      "sales_events": [
+        "select"
+      ],
+      "sales_quotes": [
+        "order"
+      ],
+      "sales_segments": [
+        "group"
+      ],
+      "stg_orders_raw": [
+        "select"
+      ],
+      "tbl_contact_01": [
+        "order"
+      ],
+      "tbl_ledger_01": [
+        "select"
+      ],
+      "tbl_stock_01": [
+        "group"
+      ]
+    },
+    "composite_key_tables": [
+      "crm_ticket_events",
+      "finance_journal_lines",
+      "finance_po_lines",
+      "inventory_allocations",
+      "inventory_receipt_lines",
+      "inventory_stock",
+      "order_items",
+      "sales_budget_lines",
+      "sales_quote_lines"
+    ],
+    "no_key_tables": [
+      "crm_activities",
+      "crm_churn_scores",
+      "crm_consents",
+      "crm_customer_profiles",
+      "crm_loyalty",
+      "crm_nps",
+      "fct_engagement_2024",
+      "fct_revenue_2024",
+      "fct_sales_2024",
+      "fct_stock_snapshot_2024",
+      "finance_actuals",
+      "finance_balance_snapshot",
+      "finance_budgets",
+      "finance_cashflow",
+      "finance_depreciation",
+      "inventory_aging",
+      "inventory_cycle_counts",
+      "inventory_demand",
+      "inventory_reorder",
+      "sales_daily_rollup",
+      "sales_forecast",
+      "sales_pipeline",
+      "sales_targets",
+      "sales_targets_v2",
+      "stg_finance_raw",
+      "stg_inventory_raw",
+      "stg_orders_raw"
+    ],
+    "tables_with_fk_columns": [
+      "crm_activities",
+      "crm_calls",
+      "crm_cases",
+      "crm_churn_scores",
+      "crm_consents",
+      "crm_contacts",
+      "crm_customer_profiles",
+      "crm_emails",
+      "crm_loyalty",
+      "crm_meetings",
+      "crm_notes",
+      "crm_nps",
+      "crm_opportunities",
+      "crm_owners",
+      "crm_subscriptions",
+      "crm_tickets",
+      "fct_engagement_2024",
+      "fct_revenue_2024",
+      "fct_sales_2024",
+      "fct_stock_snapshot_2024",
+      "finance_actuals",
+      "finance_ap_invoices",
+      "finance_ar_invoices",
+      "finance_assets",
+      "finance_balance_snapshot",
+      "finance_budgets",
+      "finance_cashflow",
+      "finance_cost_centers",
+      "finance_credit_notes",
+      "finance_depreciation",
+      "finance_journal_lines",
+      "finance_po_lines",
+      "finance_purchase_orders",
+      "inventory_adjustments",
+      "inventory_aging",
+      "inventory_allocations",
+      "inventory_backorders",
+      "inventory_batches",
+      "inventory_bins",
+      "inventory_cycle_counts",
+      "inventory_damage",
+      "inventory_demand",
+      "inventory_movements",
+      "inventory_picking",
+      "inventory_putaway",
+      "inventory_receipt_lines",
+      "inventory_receipts",
+      "inventory_reorder",
+      "inventory_returns",
+      "inventory_serials",
+      "inventory_transfers",
+      "order_items",
+      "orders",
+      "sales_budget_lines",
+      "sales_commissions",
+      "sales_daily_rollup",
+      "sales_discounts",
+      "sales_events",
+      "sales_forecast",
+      "sales_invoices",
+      "sales_payments",
+      "sales_pipeline",
+      "sales_quote_lines",
+      "sales_quotes",
+      "sales_refunds",
+      "sales_returns",
+      "sales_shipments",
+      "sales_targets",
+      "sales_targets_v2",
+      "stg_finance_raw",
+      "stg_inventory_raw",
+      "stg_orders_raw",
+      "tbl_contact_01",
+      "tbl_ledger_01",
+      "tbl_stock_01"
+    ],
+    "non_ascii_tables": [
+      "crm_accounts",
+      "crm_activities",
+      "crm_contacts",
+      "crm_meetings",
+      "crm_notes",
+      "crm_nps",
+      "crm_owners",
+      "crm_prospects",
+      "crm_segments",
+      "crm_ticket_events",
+      "customers",
+      "dim_account_v2",
+      "dim_warehouse_v2",
+      "erp_products",
+      "finance_chart_of_accounts",
+      "finance_cost_centers",
+      "finance_gl_entries",
+      "finance_journal_lines",
+      "inventory_damage",
+      "inventory_picking",
+      "inventory_suppliers",
+      "inventory_warehouses",
+      "marketplace_products",
+      "pim_products",
+      "sales_commissions",
+      "sales_leads",
+      "sales_segments",
+      "tbl_contact_01",
+      "tbl_cust_01"
+    ]
+  },
+  "files": {
+    "crm_accounts.csv": "cbbb3944e607deddbe9ed3c01358bbb21231edc9e39455aee29fff99472d7456",
+    "crm_activities.parquet": "1a880e4c15e9aee4b6a236b0de25d17382f3e83a1ba3f2daa5d80705534ecb2c",
+    "crm_calls.csv": "7289eb28626e39e69483874374357917022ce2347d8be8827c5474f24156cccc",
+    "crm_campaigns.csv": "4f1b678807bffb34ded857756a95002d33b31c8dac6ccb5c23c8f259b5388541",
+    "crm_cases.csv": "8e64cddc6254b818133b864697704af714d89e92273ec2986c36d206966a62d0",
+    "crm_churn_scores.csv": "01d7ba2085f61f2b5fef2bca1499608e310829bdee1682366f0e670e761ca779",
+    "crm_consents.csv": "7f4f31bc0cb0c80358add3065e887702a6577305655c967bd0eeca4a80e90ac7",
+    "crm_contacts.parquet": "35443c206aff1c5f5b61d7e6d22d23322d05c8b0c02142479cbc3057e2f9d43a",
+    "crm_customer_profiles.csv": "271d3d35b4d0e4a5e328e5511909224c19f0d8c7d534817be3f328a19c3770ef",
+    "crm_emails.parquet": "0cbf7168e90844f97c9223a06b9b38cd1c2b064e112ebda7f0d3576ce64ceeb5",
+    "crm_loyalty.csv": "19cd3a823859d94082f6c28deb10ed5cd376b2939797aeb84cc29fc5183c69c7",
+    "crm_meetings.csv": "23915adb4596c9f181f5d64aff3528e993e9f1fcc15301d3a290d780532d37b8",
+    "crm_notes.csv": "ae6e19515423c574367fed4ccec8442ece51b20ad934d981f8e2d81ee527e5ed",
+    "crm_nps.csv": "381196b1a5ccc9dbe676ba18be5a86c66e1b42b4d542ab5f142923b168f0deb7",
+    "crm_opportunities.parquet": "7890add078cb83ee71e02e7a04bbb2fbf60bd047c5825157ba30481cb87901e1",
+    "crm_owners.csv": "c2cbf7fa68c7175542071677b8f5c1512431e5cb5d96f2d5559d248e90ca5283",
+    "crm_prospects.json": "3eac375943564de710afe2bcaf8c8c03bea7b727535108f93a9947af6f781b45",
+    "crm_segments.json": "22ebbd72f0632679576c9a09ada84e315da62679be375b33f6365d538c1ba7e8",
+    "crm_subscriptions.csv": "599539e3987222c79e058950a5cddb97fa0d011d71cb4f483ac9028b3f8d38b1",
+    "crm_ticket_events.csv": "554448dc4a1b26f3ce490da91f1a0120e7aae1a4e9aa70740c87b515c264c5b0",
+    "crm_tickets.parquet": "df4598aa073c763130a3f22db5178a212e29e2e93fde7106b44b5fcd898bd38a",
+    "customers.csv": "653a3d0a4b46a03b211da00978fe3d4669316498ef29f389631b3537da7fd2b8",
+    "dim_account_v2.csv": "0477fcc539bc1ec27f592b7a4dd5f395ab28028aa148e4783464e45661a78bcb",
+    "dim_warehouse_v2.csv": "52cbb7d38d3ae43b1f5c80ee27da5470eb95bb757448f4e94c9cb309e02caca9",
+    "erp_products.csv": "dde54c1d5173a82c55ab909ae04346237f911acc30a583e38d984aaef25dbac2",
+    "fct_engagement_2024.csv": "72d3939bd657ac6d1fd9acd704f482851d68848de0d7038845e013aef65998b4",
+    "fct_revenue_2024.csv": "882719ec15d33d96a5570f86a8a498b11ab5e5c291c513286bf001b69fe9e552",
+    "fct_sales_2024.csv": "2e6b79a9936e9279b1903adebd8530565bf2f2403c32452c48aec6c757fe4240",
+    "fct_stock_snapshot_2024.csv": "33990b60be6ba07b9944801f89fce1dd4d7b7f39c0bd8e91d77f677dd3518b50",
+    "finance_actuals.parquet": "d9b840ad7ee491e6e63a9c41ec6a63f254064cfb04430390370d46a0485108f5",
+    "finance_ap_invoices.parquet": "e935d4354bec0109bce12247bc9a5a93ca821c3fd868d607e206fa4a540789f0",
+    "finance_ar_invoices.csv": "9a3d5800e2340b638ccec3ba957e4c3d91c4c5bb02ab046f1d3d09e3cb76c4d5",
+    "finance_assets.csv": "0f2dd2112a076a2b6771116f3ed435d98fc67a00890e19811a0c5371750f10fd",
+    "finance_balance_snapshot.csv": "b652d3f000f09f9090d085560339da7f588b1e3194a3fa82205d637101d4111f",
+    "finance_budgets.csv": "aba3f022ec383acbbcdfff13a0e5a84bedf508ac8e627be8d312b97b664512ba",
+    "finance_cashflow.csv": "143ef8571883289014627e42a981c1fd60f925f5eccd1c48e4d34c35ebc122ec",
+    "finance_chart_of_accounts.json": "f78ab1d8d54ee190865fc3cbbce6a13eba706579a4d1367c7d00fc9423c465a8",
+    "finance_cost_centers.csv": "af2d9fa38070e7901b257ad4ec8842e7867c4788a916d3050fe36a6ad207fc32",
+    "finance_credit_notes.csv": "dcd74997a377a72d780ff7968819ff92ce179c6de4c0f65ba0ffc077158efbf1",
+    "finance_depreciation.csv": "c797949e7edaaf336b2bac3f159b61db32f03c26d1bba8c0495b6a387a9f7593",
+    "finance_exchange_rates.json": "8c655cf0210ca118bc87245aa671b49e3d48c531e5f6de8d9c7b7aa54762fdbe",
+    "finance_gl_entries.parquet": "4620ba0e824d7abe0977bf91b2b63ed40b9c12e5f569259914a81889a61bcc93",
+    "finance_journal_lines.csv": "671b06ae9dcf5d05c26e0ab549c6d5cd902defdb062220d83aa65434416b52a3",
+    "finance_periods.json": "eda3c843eb3a22001afc52242cc7df0837b362dbf2905b667764624d577d1d8d",
+    "finance_po_lines.parquet": "a7d0f0e65d20e8af16b95bf95c1ae792ce5275ff27ec14ba8c2e7f3a4c7d94a2",
+    "finance_purchase_orders.parquet": "801d8ca6804f7e11d50aba3c631f4365988926d92c7893b71227d6162f939420",
+    "finance_tax_rates.csv": "751c07a16955194c9290e97af76e74f5f6e3d9e87b60316bdc9b79fc58c9c6d6",
+    "finance_vat_returns.json": "9563ecae5d871dbb882f1ef21b61189f4226335de4e877140782d177f67de600",
+    "inventory_adjustments.csv": "4e6a265150a5d72f5523ac49c686a31b26faa33f39ae427ff965988bef08d904",
+    "inventory_aging.csv": "f0c7d4ecb0cba3b11bcf98fb7f4bbd510bc7d42b22b0e6e9a4a48fb01a6e6644",
+    "inventory_allocations.csv": "f1eb2db3f19ed61ef389e977d2f43ecdcb5199b65a2c821e35d7d53af2081a52",
+    "inventory_backorders.csv": "6892c9b3797829e03c52f34268c31c7353124e1b56ae60532abc117fc57a23e1",
+    "inventory_batches.parquet": "7ead19874cc4b833cbf94ed964cc0b302cfa48770d8b71004769209abf8c774f",
+    "inventory_bins.csv": "56ee441da31a8829c84aeccc0f02e89d8fda4b71d2701fde8d3354971bf4d70f",
+    "inventory_cycle_counts.csv": "8369a57f355dd0905d28ade061b1c8a61b4b2c9a824985b112b522bf6762f273",
+    "inventory_damage.csv": "515db0b010d49e7e812b90c92aeddf257d29a00684e66bd67346ce9ab0a0991a",
+    "inventory_demand.parquet": "5ba42ccdf5387bf2f5da88c0fbfbfb3d85ba3b92e364b62774834c2f6a5725fc",
+    "inventory_movements.parquet": "52f330f5ed119ac0efd799280226c566feea0fc02d6106020aa9487f1143846e",
+    "inventory_picking.csv": "cf66c6d2d05c6bbad665581e1a46bcc807057b52f507d0dbba45d8ddb492c6a2",
+    "inventory_putaway.csv": "49223b7834084954dd6bea6f0652f5c7b7e538f53d673ce7fd55c70251563461",
+    "inventory_receipt_lines.csv": "dda69cb2df13a68fbb7a445eff84fc3220411186d12253281ede532981d9e0de",
+    "inventory_receipts.parquet": "f049f0e73db6c44067687c26bd403a2b1a4f0e763e6cfb0e453bffad1ece0336",
+    "inventory_reorder.csv": "83fceabd57eec5c99ede48aa92789a5223a68bed6f7698fd65e5b0a93c56500c",
+    "inventory_returns.csv": "61fbe7bf169f1de0c1c372469bda5c31f4ded7932ca5af05d8759c8318d3c7bd",
+    "inventory_serials.csv": "9d14b0c780c5dab7581ab35000f4c0008023b2f6a58c134ade78c82707f91575",
+    "inventory_stock.parquet": "c5f7ce29a8537451710500994f0d3128af29e0bf962391adc05eeea15aa1209f",
+    "inventory_suppliers.json": "a76a6d3fc8fb1abaa95e5c922fe88d48e13dcec74c2d9a1e03e1fae0310e7007",
+    "inventory_transfers.csv": "fe6b02e3972ac5a59671a69d6b424166a80f65a9ecc45ff7c1ea6cee8b7c41dc",
+    "inventory_warehouses.csv": "d633532f0a644e1848611bbfcdad8adbbf5ce02163a44ec3c71c0dc6e1c074af",
+    "marketplace_products.json": "569aeb88ab692a3f096fa31f6e6c381056f7dd686594488d5ec3d78a7bba11c1",
+    "order_items.csv": "2ff552bab5843e49f6067d503e556d0ba29e36fc29f1a8b96f9e31fa37337f16",
+    "orders.csv": "164bf52d43c456556c992610d41566246673a762c4fae38e1009f6424372c7b5",
+    "pim_products.parquet": "ffe1983f5a05dc9f159f5dd482a6d7ec3b7f7d895eaa65a94238791cd892114e",
+    "sales_budget_lines.csv": "13a2a495d42985fdb58e5b085e1a1dc0f7f7522078065de7984628dc8ae739fd",
+    "sales_channels.csv": "a4d92d0e9b4adf1abeb3c1a4127b228256f807a37dfaf62794f84afdfb14f12c",
+    "sales_commissions.csv": "35f4d14ddb56c5b6f748f48d6bc8add86ad381db6f0ebe5f8906a61c000dc1b4",
+    "sales_daily_rollup.parquet": "bad69deb8c35362394513fd1b6befdf3e6a4c8d90638f4172e0387f4b15582ac",
+    "sales_discounts.csv": "59737fb4b334594cb57155befaa60e1b2dc2d8820719ccf140710660c70e2ed3",
+    "sales_events.json": "a55727b1c8a14cef17c3a7183f533ddf02cf4f487863f12e3c5218329b93a7f2",
+    "sales_forecast.csv": "f8512c5da6469b54de29038f9e0ee3c8188b4f5a2ae7055a452b90454aecb8b5",
+    "sales_invoices.parquet": "72019ae5f1b5f45a65cd927c962c6edbdc32a9bc5d28dc1c9ab3c33aec10c319",
+    "sales_leads.csv": "2f98c1b56193fa0a4eab903287b30a9e568f286b943b30df362f7d44bb9408ea",
+    "sales_payments.parquet": "5e63d3a13be2afa62dd38fcbbe33ad9bae42e9d169af0f7dd66937927e8bdac6",
+    "sales_pipeline.parquet": "e583fd5dd1a48c16e43254fe81233a444e830c350e66deb4a1ea6660a7b82036",
+    "sales_quote_lines.csv": "82026db5770e87a99a9f089628f5574fd774b36c259c13ecb6468099e1ab5c05",
+    "sales_quotes.json": "1a25659dc167edd818907a8abb4e5ec76ca2baee2c69f9ce2e039765a604d375",
+    "sales_refunds.csv": "cd45929d612e1f47aa97e061e25d1229e3dc2ffd9ac352f1eefa46aab3fcbaa2",
+    "sales_regions.csv": "db560f1b77729a0cf9d66f0b18b03ce37af30d1a5d349d0658d500e3611348e4",
+    "sales_returns.csv": "a350f03ce0eaa0ff67e7edfa1429312a18beda52d7324bf181cd80344a2448c3",
+    "sales_segments.json": "6c1776c0d32dd53441d40c734ab61a6ee77b9516cfbc2e9611c1bc5f961f2296",
+    "sales_shipments.csv": "bb7c0296670d5141f8014807dc0fe2035a1401560f469052d182777f043bc724",
+    "sales_targets.csv": "60d67461b18f3519f91d08cc859e4cbe4b37b5a2509073f105e78ade466a6876",
+    "sales_targets_v2.csv": "d5d9426bb801699ded818c20652c342e2530ed27cc2b7d90de21f15dd98734b8",
+    "stg_finance_raw.csv": "10ca29d70747853321417231a74116f0a1080be98cf820ed64649b78ce3320e0",
+    "stg_inventory_raw.csv": "cda06c442b9b15a71d6e56fdf1926997ca3133339453a01d46bac24eb330f6d1",
+    "stg_orders_raw.csv": "b665cf436ca1728fae6a49c06c098f8dacf0f89e164e9cc451852b5b50eb65b9",
+    "tbl_contact_01.csv": "13c6063c36c25cfecf5acda5781e55ae76b6b42c9fce12280f5f8c3a6667efae",
+    "tbl_cust_01.csv": "b6bdd31013ed23476b5de26d75f2f3f6dc86b888a5da174bf573241fcf355916",
+    "tbl_ledger_01.csv": "3e78b422dae38203003e5eb9e0ecb54b49cd1f14abc73b73569abba66c6978f4",
+    "tbl_stock_01.csv": "34ade88e70f7d5370be86e97beb9758349e5fff6ade9a07d14a3159ffc96698d"
+  },
+  "notes": {
+    "determinism": "Fixed seed, per-table RNG from the table name, fixed date range 2024-01-01..2024-12-31, no clock and no absolute paths in the output.",
+    "ground_truth_derivation": "class and expected_relations are derived by replaying the CURRENT naming rules (ontology.discover) on the same table/column shapes; regenerating is required if those rules change.",
+    "orphans": "A few foreign-key rows hold 9001/9002 on purpose, so rows pointing at nothing are exercised.",
+    "formats": "connect() reads one folder level; all 100 files are directly in the folder."
+  }
+}

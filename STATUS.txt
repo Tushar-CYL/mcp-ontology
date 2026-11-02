@@ -6,9 +6,10 @@
 
 ================================================================================
 
-  Project : D:\tushar\ontology
+  Project : D:\tushar\new_latest\ontology
   Code    : https://github.com/Tushar-CYL/mcp-ontology
-  Tests   : 165, all passing
+  Tests   : 281 (165 application + 7 fixture + 83 new core + 13 RDF/URL + 7 triple-store + 3 connection-reuse + 3 labels:
+            multi-source, robustness, resolution, review, context builder, API)
   Updated : 2026-10-29
 
 
@@ -131,21 +132,33 @@
   │ PART                         │ STATE    │ NOTES                        │
   ├──────────────────────────────┼──────────┼──────────────────────────────┤
   │ 1  Ontology                  │  DONE    │ reads any source unaided     │
-  │ 2  Knowledge graph           │  DONE    │ 1.5M things built in 14s     │
+  │ 2  Knowledge graph           │  DONE    │ nodes + time-stamped edges   │
   │ 3  Semantic                  │  DONE    │ metrics + SQL                │
-  │ 4  Context                   │  PART    │ packing done; no AI wired in │
+  │ 4  Context                   │  PART    │ cited pack builder done;     │
+  │                              │          │ no LLM wired in              │
   ├──────────────────────────────┼──────────┼──────────────────────────────┤
-  │ The demo UI                  │  DONE    │ four screens                 │
-  │ Terminal version (show.py)   │  DONE    │ same thing, no browser       │
-  │ Tests                        │  DONE    │ 162, unit and end to end     │
+  │ The demo UI                  │  DONE    │ four tabs                    │
+  │ Terminal version (run.py)    │  DONE    │ same thing, no browser       │
+  │ Benchmark harness            │  DONE    │ benchmark.py + lake100       │
+  │ Tests                        │  DONE    │ 281, unit and end to end     │
+  │ Multi-source graphs          │  DONE    │ N sources, one graph         │
+  │ Warm reopen (2nd process)    │  DONE    │ graph owns its tables        │
+  │ Source warnings              │  DONE    │ bad file skipped, rest kept  │
+  │ Cross-source identity        │  DONE    │ candidates + confidence;     │
+  │                              │          │ never merged silently        │
+  │ Human review gate            │  DONE    │ proposals, audit, publish    │
+  │ Agent Context Builder        │  DONE    │ citations + hard budget      │
+  │ API + MCP                    │  DONE    │ api/http.py, api/mcp_server  │
   ├──────────────────────────────┼──────────┼──────────────────────────────┤
+  │ Review UI (Streamlit)        │  TO DO   │ CLI/API gate exists          │
+  │ Source-of-truth precedence   │  TO DO   │ which source wins per column │
   │ Search over text             │  TO DO   │ for runbooks, notes, reports │
-  │ An API to serve it           │  TO DO   │ so other tools can ask       │
-  │ Time travel in the UI        │  TO DO   │ the graph stores it already  │
+  │ Time travel in the UI        │  TO DO   │ the graph + API store it     │
   │ More database connectors     │  TO DO   │ Snowflake, SQL Server, ...   │
   └──────────────────────────────┴──────────┴──────────────────────────────┘
 
-  Roughly:   layers 1-3 finished   ·   layer 4 half   ·   UI finished
+  Roughly:   layers 1-3 finished   ·   layer 4 has a real pack builder
+             multi-source + gate + API done   ·   review UI next
 
 
 --------------------------------------------------------------------------------
@@ -166,6 +179,14 @@
   A thin answer is fine. A crash, a hang, or a graph that looks right and
   is wrong, is not.
 
+  There is also a deterministic 100-table benchmark lake
+  (benchmarks\fixture_lake100.py) with checked-in ground truth, so the
+  before/after numbers are measured on the same data every time.
+
+  A real 121 MB, 9-CSV export (the Olist shop data) completes end to end:
+  1,550,922 things and 640,501 links, exit 0, and a second run reopens the
+  graph warm instead of rebuilding it.
+
 
 --------------------------------------------------------------------------------
   7.  HOW TO RUN IT  -  three commands
@@ -184,7 +205,7 @@
       python ui.py                                   see it on a screen
 
 
-  That is everything. No virtual environment, no `py` launcher, no
+  That is everything. No virtual environment needed, no `py` launcher, no
   `streamlit` command - every one of those is a thing that can be missing
   on a locked-down machine, and each one has already cost an afternoon.
 
@@ -218,15 +239,26 @@
   are perfectly fine.
 
 
-  CHECKING IT ALL WORKS  (optional, ~30 seconds)
+  CHECKING IT ALL WORKS  (optional, ~40 seconds)
 
       python -m pytest
 
-      Expect:   165 passed
+      Expect:   all tests pass   (165 application tests, plus the
+                benchmark-fixture tests)
+
+
+  MEASURING IT  (optional)
+
+      python benchmark.py --source data\example.db
+      python benchmark.py --fixture lake100
+
+      Prints connect / discover / build / query timings. The lake100
+      fixture is generated first with:
+      python benchmarks\fixture_lake100.py --out data\fixtures\lake100
 
 
 --------------------------------------------------------------------------------
-  8.  WHAT YOU SEE  -  four screens
+  8.  WHAT YOU SEE  -  four tabs
 --------------------------------------------------------------------------------
 
    ┌────────────────────────────────────────────────────────────────────┐
@@ -271,12 +303,20 @@
   9.  IF SOMETHING GOES WRONG
 --------------------------------------------------------------------------------
 
-  "running scripts is disabled"
-      Run STEP 1 again. It only lasts for that window.
+  "python is not recognised"
+      Python is not on your PATH. Install from python.org and tick
+      "Add python.exe to PATH". Close the window and open a new one.
+
+  "The packages are not installed yet"
+      Run:  python -m pip install -r requirements.txt
 
   An import error naming something that clearly exists
-      An old copy of the app is still running. Use .\run_ui.ps1, which
+      An old copy of the app is still running. Use python ui.py, which
       stops it first.
+
+  "Port 8501 is already in use"
+      Another Streamlit app is running. python ui.py stops old copies it
+      finds; if it still fails, close the other terminal.
 
   "No Python 3.10 or newer found"
       Install from python.org and tick "Add python.exe to PATH". Close
@@ -291,6 +331,10 @@
       It is building the graph. Only the first time - after that it
       remembers. Press "Rebuild" in the sidebar to force it again.
 
+  The database is locked
+      DuckDB allows one writer at a time. Close other terminals,
+      notebooks or editors touching the same file.
+
 
 --------------------------------------------------------------------------------
   10.  WHAT IT CANNOT DO
@@ -300,13 +344,123 @@
   part is automatic and needs nothing from you.
 
   It cannot read your BUSINESS NAMES. Nothing in a database says that a
-  table called "tbl_cust_01" means Customer. It will call it TblCust01
-  until somebody says otherwise:
+  table called "tbl_cust_01" means Customer. It will call it Cust until
+  somebody says otherwise.
 
-      python run.py mydata.db
+  The discovery step accepts a rename map in code:
 
-  That rename is remembered. It is not a code change.
+      discover(schema, names={"customers": "Buyer"})
 
+  but run.py and the UI do not yet offer a place to store one. That is a
+  known gap, not a feature that quietly works.
+
+  Also not built yet: search over text, a review screen in the UI (the CLI and
+  API gate exist), source-of-truth precedence between sources, a time-travel
+  control in the UI (the graph and API already answer as-of), more connectors,
+  and any wired-in AI. See SETUP.md for the full list.
+
+  Multiple sources are supported now: pass several paths to run.py, or use
+  connect_many/build_many in code. They share one graph, each row keeps its
+  source, and ambiguous queries refuse to guess.
+
+  The consumption surface exists: `python -m api.http` and
+  `python -m api.mcp_server` serve ontology, graph neighbours, metrics and the
+  Agent Context Builder. The review gate is `python -m review.cli`.
+
+  This is a local prototype. There is no deployed instance, no support
+  commitment, and no customer data.
+
+
+================================================================================
+  11.  WHAT CHANGED IN THE CORE (2026-10-29)
+================================================================================
+
+  Every source table is now materialised into the graph instead of relying on
+  an attach that only happened during a build. That fixed the second-process
+  crash ("s.<table> does not exist") for database sources: a warm graph now
+  answers normally (verified in docs\benchmark\baseline\*_after_core.md).
+
+  On top of that:
+      - several sources can be built into one graph (source_id on every row,
+        namespaced classes/relations/nodes, per-source rebuild);
+      - a bad file in a folder is skipped with a warning instead of failing
+        the source; duplicate file stems become distinct tables;
+      - node ids include the source, so the same key in two systems is two
+        nodes until cross-source resolution says otherwise.
+
+  Cost: build time went from 6.0s to 8.1s on the 100-table lake because the
+  graph now owns its data. That is the price of the warm path working.
+
+  Then the capability core landed (2026-10-30):
+      - cross-source identity candidates (`knowledge_graph/resolve.py`) with a
+        confidence and an explanation; nodes are never merged silently;
+      - human review gate (`review/`): propose, approve/reject, audit history,
+        and a publish gate that refuses to serve semantic/context while an item
+        is still pending (`python -m review.cli`);
+      - Agent Context Builder (`context/assemble.py`): the entity, its links,
+        cross-source matches and data-quality findings, packed under a hard
+        budget with a citation per fact and a list of what was dropped;
+      - API + MCP (`api/`): one service, served locally over HTTP and to agents
+        over MCP stdio, with no new dependency;
+      - the UI Context tab now uses the real pack builder and shows dropped
+        facts and pending reviews.
+
+
+
+
+================================================================================
+  12.  WIDER SOURCES (2026-10-30)
+================================================================================
+
+  connect() now accepts, besides database files and CSV/Parquet/JSON/Excel:
+
+      .nt / .nq              RDF graph files, streamed by DuckDB. Subjects and
+                             IRI objects become Entity nodes; object properties
+                             become Link nodes with two declared links to Entity.
+      .ttl/.rdf/.jsonld      the same, via rdflib (optional install)
+      http(s):// URLs        a supported file downloaded to a temporary folder
+      snowflake:// URLs      via snowflake-connector-python (optional)
+      databricks:// URLs     via databricks-sql-connector (optional)
+
+  Measured on the 4.1 GB disamkb.nt knowledge-graph export:
+      2,572,151 Entity + 18,293,623 Link nodes  = 20,865,774 things
+      36,587,246 links, 0 dangling
+      build 549 s, graph file 7.7 GB, exit 0
+      the second run reopens the graph warm (no rebuild)
+
+  A missing optional driver is reported with the exact pip command, not a
+  stack trace. The graph records the failure as a finding when a source cannot
+  be built.
+
+
+  Triple-store folders (2026-10-30): a folder shaped like a CSKG export
+  (entities.* + relations.* + triples/train/test/valid.*) is detected and read
+  as a graph, not six unrelated tables. On data\raw\benchmark\cskg_dataset_sup_10:
+      36,131 Entity nodes, 167 relation types, 132,286 typed edges (deduped
+      across the train/test/valid overlaps), 0 dangling, build 5 s.
+  Before this, the same folder produced 0 links.
+
+  UI stale-server fix: `ui.py` now kills whatever is listening on port 8501 (and
+  any python process running streamlit) before launching. The old wmic lookup is
+  gone, which is why a server from D:\tushar\ontology could keep serving an old
+  app and show `cannot import name 'table_ref'`.
+
+
+  Concurrency fix (2026-10-30): the Graph now serialises every read with an
+  RLock and consumes whole results instead of leaving a cursor open. The UI can
+  read while another tab/request is in flight without DuckDB refusing with
+  "connection is busy with another call". Verified on the 7.7 GB RDF graph:
+  12 parallel count/class queries in 2.0 s. Regression tests:
+  test_graph.py::TestConnectionReuse (sequential + 64 parallel reads) and
+  test_app.py::TestRdfSource (the four tabs on an .nt source).
+
+
+  Graph visual (2026-10-30): the Knowledge graph tab is now a named network.
+  Each node shows its data label (`label`/`name`/`title`, key tail fallback),
+  sized by connectivity, with white borders and curved edges; measured links
+  are solid and derived links dashed. Layout can be force or circular.
+  Regression tests: test_graph.py::TestSubgraphLabels and
+  test_rdf_and_urls.py::TestGraphLabels.
 
 ================================================================================
                                     END

@@ -1,0 +1,94 @@
+{
+  "tool": "benchmark.py",
+  "generated_at": "2026-10-29T17:34:03+00:00",
+  "source": "data\\hospital.db",
+  "fixture": null,
+  "fixture_generated": false,
+  "python": "3.14.7",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "stages": {
+    "connect": {
+      "ok": true,
+      "seconds": 0.249818,
+      "tables": 4,
+      "rows": 13,
+      "formats": {
+        "database": 4
+      },
+      "name": "hospital"
+    },
+    "discover": {
+      "ok": true,
+      "seconds": 0.001204,
+      "classes": 4,
+      "relations": 3,
+      "measured_relations": 3,
+      "derived_relations": 0,
+      "renamed_classes": 0
+    },
+    "graph": {
+      "ok": true,
+      "open_seconds": 0.062776,
+      "cold_build_seconds": 0.353671,
+      "nodes": 13,
+      "edges": 13,
+      "skipped_edges": 0,
+      "dangling_edges": 0,
+      "dangling_check_seconds": 0.003112,
+      "findings": 0,
+      "file_bytes": 3682304,
+      "file_mib": 3.512,
+      "path": "data\\bench_graphs\\bench_data_hospital_db.duckdb",
+      "warm_reopen_seconds": 0.047841,
+      "is_current_warm": true,
+      "warm_nodes": 13,
+      "warm_edges": 13,
+      "warm_query_ok": false,
+      "warm_query_error": "CatalogException: Catalog Error: Table with name \"s.departments\" does not exist because schema \"s\" does not exist.\n\nLINE 2: FROM s.\"departments\"\n             ^^^^^^^^^^^^^^^"
+    },
+    "semantic": {
+      "ok": true,
+      "discover_seconds": 0.000157,
+      "discovered": 22,
+      "compile_seconds": 0.096963,
+      "compiled": 22,
+      "compile_failures": 0,
+      "executed": 22,
+      "execute_failures": 0,
+      "sample_metric": "floor_sum",
+      "sample_metric_title": "sum of floor in Department",
+      "sample_rows": 1,
+      "query_runs": 20,
+      "query_p50_ms": 2.52,
+      "query_p95_ms": 3.63,
+      "query_min_ms": 1.404,
+      "query_max_ms": 4.083,
+      "sample_sql": "SELECT sum(\"floor\") AS value\nFROM s.\"departments\"\nLIMIT 100"
+    },
+    "context": {
+      "ok": true,
+      "seconds": 0.019834,
+      "class": "Department",
+      "key": "2",
+      "facts_gathered": 4,
+      "facts_kept": 4,
+      "chars": 158
+    }
+  },
+  "errors": [],
+  "findings": [
+    {
+      "stage": "warm reopen",
+      "finding": "is_current() is True, but the sample metric cannot run on the reopened graph without rebuilding: the source is not re-attached to the new connection. This is the cached path a second app/run.py process takes.",
+      "error": "CatalogException: Catalog Error: Table with name \"s.departments\" does not exist because schema \"s\" does not exist.\n\nLINE 2: FROM s.\"departments\"\n             ^^^^^^^^^^^^^^^"
+    }
+  ],
+  "limits": {
+    "query_runs": 20,
+    "query_warmup": 3,
+    "execute_limit": 25,
+    "context_budget_chars": 900
+  },
+  "duckdb": "2.0.0",
+  "total_seconds": 0.976114
+}

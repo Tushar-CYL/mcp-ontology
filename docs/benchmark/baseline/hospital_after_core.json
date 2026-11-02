@@ -1,0 +1,87 @@
+{
+  "tool": "benchmark.py",
+  "generated_at": "2026-10-29T18:02:25+00:00",
+  "source": "data\\hospital.db",
+  "fixture": null,
+  "fixture_generated": false,
+  "python": "3.14.7",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "stages": {
+    "connect": {
+      "ok": true,
+      "seconds": 0.217388,
+      "tables": 4,
+      "rows": 13,
+      "formats": {
+        "database": 4
+      },
+      "name": "hospital"
+    },
+    "discover": {
+      "ok": true,
+      "seconds": 0.001505,
+      "classes": 4,
+      "relations": 3,
+      "measured_relations": 3,
+      "derived_relations": 0,
+      "renamed_classes": 0
+    },
+    "graph": {
+      "ok": true,
+      "open_seconds": 0.075531,
+      "cold_build_seconds": 0.28166,
+      "nodes": 13,
+      "edges": 13,
+      "skipped_edges": 0,
+      "dangling_edges": 0,
+      "dangling_check_seconds": 0.002317,
+      "findings": 0,
+      "file_bytes": 5255168,
+      "file_mib": 5.012,
+      "path": "data\\bench_graphs\\bench_data_hospital_db.duckdb",
+      "warm_reopen_seconds": 0.070034,
+      "is_current_warm": true,
+      "warm_nodes": 13,
+      "warm_edges": 13,
+      "warm_query_ok": true
+    },
+    "semantic": {
+      "ok": true,
+      "discover_seconds": 9e-05,
+      "discovered": 22,
+      "compile_seconds": 0.05774,
+      "compiled": 22,
+      "compile_failures": 0,
+      "executed": 22,
+      "execute_failures": 0,
+      "sample_metric": "floor_sum",
+      "sample_metric_title": "sum of floor in Department",
+      "sample_rows": 1,
+      "query_runs": 20,
+      "query_p50_ms": 0.698,
+      "query_p95_ms": 0.907,
+      "query_min_ms": 0.598,
+      "query_max_ms": 1.08,
+      "sample_sql": "SELECT sum(\"floor\") AS value\nFROM \"src_hospital__departments\"\nLIMIT 100"
+    },
+    "context": {
+      "ok": true,
+      "seconds": 0.017639,
+      "class": "Department",
+      "key": "1",
+      "facts_gathered": 4,
+      "facts_kept": 4,
+      "chars": 159
+    }
+  },
+  "errors": [],
+  "findings": [],
+  "limits": {
+    "query_runs": 20,
+    "query_warmup": 3,
+    "execute_limit": 25,
+    "context_budget_chars": 900
+  },
+  "duckdb": "2.0.0",
+  "total_seconds": 0.793641
+}

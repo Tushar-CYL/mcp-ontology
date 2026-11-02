@@ -144,3 +144,24 @@ class TestHonesty:
             + [i.value for i in at.info]).lower()
         assert "stated" in shown
         assert "were guessed from" not in shown
+
+
+class TestRdfSource:
+    """An RDF source must render the four tabs without a DuckDB busy error.
+
+    The first real failure here was a large `.nt` source: the graph was shared
+    by all tabs and a second query hit the connection while a result was still
+    open. A small graph exercises the same code path in the suite.
+    """
+
+    def test_an_nt_source_renders(self, tmp_path):
+        nt = tmp_path / "people.nt"
+        nt.write_text(
+            '<https://example.org/E1> '
+            '<http://www.w3.org/2000/01/rdf-schema#label> "Ada" .\n'
+            '<https://example.org/E1> <https://example.org/knows> '
+            '<https://example.org/E2> .\n', encoding="utf-8")
+        at = app_on(str(nt))
+        assert not at.exception
+        assert len(at.tabs) == 4
+        assert at.metric

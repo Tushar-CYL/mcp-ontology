@@ -1,0 +1,38 @@
+flowchart TB
+  subgraph L1["L1 Ontology / semantic model"]
+    P1["Palantir Foundry Ontology"]
+    P2["Databricks Unity Catalog + metric views"]
+    P3["Atlan active metadata"]
+    P4["Stardog · Ontotext GraphDB · metaphactory"]
+    P5["Protege · OWL · SHACL"]
+  end
+  subgraph L2["L2 Knowledge graph"]
+    G1["Neo4j + GraphRAG + Context Engine"]
+    G2["Amazon Neptune Analytics"]
+    G3["TigerGraph · Memgraph"]
+    G4["Databricks GraphFrames"]
+    G5["Snowflake recursive SQL only"]
+    G6["Kuzu (archived)"]
+  end
+  subgraph L3["L3 Semantic layer"]
+    S1["dbt Semantic Layer / MetricFlow"]
+    S2["Cube"]
+    S3["AtScale"]
+    S4["Databricks metric views"]
+    S5["Snowflake Semantic Views + Cortex Analyst"]
+    S6["Looker LookML · Power BI"]
+  end
+  subgraph L4["L4 Context / agent delivery"]
+    C1["Atlan Context Layer"]
+    C2["Neo4j Context Engine"]
+    C3["Palantir AIP"]
+    C4["Microsoft GraphRAG"]
+    C5["MCP (delivery protocol)"]
+    C6["Glean · Zep/Graphiti · Letta"]
+    C7["Vector DBs (storage only)"]
+  end
+  L1 --> L2 --> L3 --> L4
+  L4 --> AG["AI agents · BI · apps"]
+  L1 -. "governed semantics" .-> L3
+  L2 -. "traversal" .-> L4
+  L3 -. "metrics" .-> L4

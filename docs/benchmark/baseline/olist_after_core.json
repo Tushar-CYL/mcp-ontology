@@ -1,0 +1,87 @@
+{
+  "tool": "benchmark.py",
+  "generated_at": "2026-10-29T18:03:02+00:00",
+  "source": "data\\raw\\kaggledata",
+  "fixture": null,
+  "fixture_generated": false,
+  "python": "3.14.7",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "stages": {
+    "connect": {
+      "ok": true,
+      "seconds": 2.179223,
+      "tables": 9,
+      "rows": 1550922,
+      "formats": {
+        "csv": 9
+      },
+      "name": "kaggledata"
+    },
+    "discover": {
+      "ok": true,
+      "seconds": 0.006346,
+      "classes": 9,
+      "relations": 6,
+      "measured_relations": 0,
+      "derived_relations": 6,
+      "renamed_classes": 0
+    },
+    "graph": {
+      "ok": true,
+      "open_seconds": 0.052516,
+      "cold_build_seconds": 20.499727,
+      "nodes": 1550922,
+      "edges": 640501,
+      "skipped_edges": 0,
+      "dangling_edges": 0,
+      "dangling_check_seconds": 0.200669,
+      "findings": 0,
+      "file_bytes": 433598464,
+      "file_mib": 413.512,
+      "path": "data\\bench_graphs\\bench_data_raw_kaggledata.duckdb",
+      "warm_reopen_seconds": 0.140553,
+      "is_current_warm": true,
+      "warm_nodes": 1550922,
+      "warm_edges": 640501,
+      "warm_query_ok": true
+    },
+    "semantic": {
+      "ok": true,
+      "discover_seconds": 0.000833,
+      "discovered": 99,
+      "compile_seconds": 0.266292,
+      "compiled": 99,
+      "compile_failures": 0,
+      "executed": 25,
+      "execute_failures": 0,
+      "sample_metric": "geolocation_lat_sum",
+      "sample_metric_title": "sum of geolocation_lat in Geolocation",
+      "sample_rows": 1,
+      "query_runs": 20,
+      "query_p50_ms": 2.075,
+      "query_p95_ms": 3.784,
+      "query_min_ms": 1.454,
+      "query_max_ms": 4.225,
+      "sample_sql": "SELECT sum(\"geolocation_lat\") AS value\nFROM \"keyed_kaggledata__olist_geolocation_dataset\"\nLIMIT 100"
+    },
+    "context": {
+      "ok": true,
+      "seconds": 0.075681,
+      "class": "Customer",
+      "key": "54ca6dc5e99a82fe5112744bc4e9ef26",
+      "facts_gathered": 6,
+      "facts_kept": 6,
+      "chars": 354
+    }
+  },
+  "errors": [],
+  "findings": [],
+  "limits": {
+    "query_runs": 20,
+    "query_warmup": 3,
+    "execute_limit": 25,
+    "context_budget_chars": 900
+  },
+  "duckdb": "2.0.0",
+  "total_seconds": 23.901905
+}

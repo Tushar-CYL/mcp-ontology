@@ -1,0 +1,89 @@
+{
+  "tool": "benchmark.py",
+  "generated_at": "2026-10-29T18:02:08+00:00",
+  "source": "D:\\tushar\\new_latest\\ontology\\data\\fixtures\\lake100",
+  "fixture": "lake100",
+  "fixture_generated": false,
+  "python": "3.14.7",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "stages": {
+    "connect": {
+      "ok": true,
+      "seconds": 2.177994,
+      "tables": 100,
+      "rows": 4864,
+      "formats": {
+        "csv": 69,
+        "parquet": 20,
+        "json": 11
+      },
+      "name": "lake100"
+    },
+    "discover": {
+      "ok": true,
+      "seconds": 0.379159,
+      "classes": 100,
+      "relations": 141,
+      "measured_relations": 0,
+      "derived_relations": 141,
+      "renamed_classes": 0
+    },
+    "graph": {
+      "ok": true,
+      "open_seconds": 0.085561,
+      "cold_build_seconds": 8.128801,
+      "nodes": 4864,
+      "edges": 6347,
+      "skipped_edges": 1359,
+      "dangling_edges": 0,
+      "dangling_check_seconds": 0.003058,
+      "findings": 128,
+      "file_bytes": 41431040,
+      "file_mib": 39.512,
+      "path": "data\\bench_graphs\\bench_D__tushar_new_latest_ontology_data_fixtures_lake100.duckdb",
+      "warm_reopen_seconds": 0.079505,
+      "is_current_warm": true,
+      "warm_nodes": 4864,
+      "warm_edges": 6347,
+      "warm_query_ok": true
+    },
+    "semantic": {
+      "ok": true,
+      "discover_seconds": 0.001876,
+      "discovered": 742,
+      "compile_seconds": 4.538658,
+      "compiled": 742,
+      "compile_failures": 0,
+      "executed": 25,
+      "execute_failures": 0,
+      "sample_metric": "duration_min_sum",
+      "sample_metric_title": "sum of duration_min in CrmActivity",
+      "sample_rows": 1,
+      "query_runs": 20,
+      "query_p50_ms": 0.642,
+      "query_p95_ms": 0.884,
+      "query_min_ms": 0.545,
+      "query_max_ms": 1.065,
+      "sample_sql": "SELECT sum(\"duration_min\") AS value\nFROM \"keyed_lake100__crm_activities\"\nLIMIT 100"
+    },
+    "context": {
+      "ok": true,
+      "seconds": 0.019284,
+      "class": "CrmAccount",
+      "key": "24",
+      "facts_gathered": 7,
+      "facts_kept": 7,
+      "chars": 314
+    }
+  },
+  "errors": [],
+  "findings": [],
+  "limits": {
+    "query_runs": 20,
+    "query_warmup": 3,
+    "execute_limit": 25,
+    "context_budget_chars": 900
+  },
+  "duckdb": "2.0.0",
+  "total_seconds": 15.665964
+}

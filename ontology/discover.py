@@ -161,6 +161,10 @@ class DiscoveredRelation:
     ref_column: str
     provenance: str = "measured"   # 'measured' = the source declared it
     confidence: float = 1.0
+    # A relation defined by data (triple tables), not by a column. The normal
+    # edge builder skips these; knowledge_graph.build builds them from triples.
+    custom: bool = False
+    source_name: str | None = None   # the raw relation label in the source
 
 
 @dataclass
@@ -212,14 +216,17 @@ def discover(schema: Schema, names: dict[str, str] | None = None) -> Ontology:
     # A first word shared by EVERY table names the export, not the data -
     # `olist_` on all nine Olist files. Only visible across the whole set,
     # which is why it is removed here and not inside core_name().
-    cores = [core_name(t.name) for t in schema.tables]
-    cleaned = dict(zip([t.name for t in schema.tables],
+    # Hidden lookup tables (relations, triples) are read but are not classes.
+    visible = [t for t in schema.tables if not getattr(t, "hidden", False)]
+
+    cores = [core_name(t.name) for t in visible]
+    cleaned = dict(zip([t.name for t in visible],
                        strip_common_prefix(cores)))
 
     # --------------------------------------------------------- classes
     taken_names: set[str] = set()
     taken_codes: set[int] = set()
-    for t in schema.tables:
+    for t in visible:
         name = names.get(t.name.lower()) or class_name(cleaned[t.name])
         name = _unique(name, taken_names)
         taken_names.add(name)
@@ -254,7 +261,7 @@ def discover(schema: Schema, names: dict[str, str] | None = None) -> Ontology:
 
     # -------------------------------------------------------- relations
     rel_names: set[str] = set()
-    for t in schema.tables:
+    for t in visible:
         src = onto.class_for_table(t.name)
         if src is None:
             continue
@@ -290,6 +297,27 @@ def discover(schema: Schema, names: dict[str, str] | None = None) -> Ontology:
             ref_key = ref.primary_key[0] if ref.primary_key else "__row"
             _add_relation(onto, rel_names, taken_codes, src, target,
                           c.name, ref_key, "derived", 0.7)
+
+    # A triple-store folder: one Entity class and a relation per predicate.
+    # These relations have no source column; knowledge_graph.build creates the
+    # edges directly from the triples table.
+    triples = getattr(schema, "triples", None)
+    if triples:
+        entity_cls = onto.class_for_table(triples.get("entities", ""))
+        if entity_cls is not None:
+            for raw in triples.get("relation_names", []):
+                base = re.sub(r"[^A-Za-z0-9_]+", "_", str(raw)).strip("_")
+                base = base or "relation"
+                name = _unique(base, rel_names)
+                rel_names.add(name)
+                code = stable_code(
+                    f"{schema.name}|{entity_cls.name}.{name}", taken_codes)
+                taken_codes.add(code)
+                onto.relations[name] = DiscoveredRelation(
+                    name=name, code=code, domain=entity_cls.name,
+                    range=entity_cls.name, column="", ref_column="",
+                    provenance="measured", confidence=1.0,
+                    custom=True, source_name=str(raw))
 
     return onto
 

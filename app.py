@@ -15,7 +15,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from context.budget import Fact, fit, render
+from context.assemble import build_context
 from knowledge_graph.build import (build, is_current, row_for,
                                    table_ref)
 from knowledge_graph.store import open_graph
@@ -51,7 +51,13 @@ def table(rows: list[dict], alt: str = "", height=None) -> None:
         st.caption("_nothing to show_")
         return
     if _pandas_works():
-        st.dataframe(rows, hide_index=True, alt=alt, height=height)
+        # Streamlit 1.66 rejects height=None; only pass it when a caller asks
+        # for a height. The fallback below is for machines where pandas' DLL is
+        # blocked.
+        options = {"hide_index": True, "alt": alt}
+        if height is not None:
+            options["height"] = height
+        st.dataframe(rows, **options)
         return
     cols = list(rows[0])
     out = ["| " + " | ".join(str(c) for c in cols) + " |",
@@ -110,6 +116,13 @@ except SourceError as e:
 except Exception as e:
     st.error(f"Could not read this source.\n\n{e}", icon=":material/error:")
     st.stop()
+
+# A file that could not be read is a fact about the source, not a crash.
+# Surface it once, quietly, so nobody thinks the data was complete.
+for warning in schema.warnings[:3]:
+    st.caption(f"⚠ {warning}")
+if len(schema.warnings) > 3:
+    st.caption(f"⚠ … and {len(schema.warnings) - 3} more warnings")
 
 counts = graph.class_counts()
 order = [n for n, _ in counts]
@@ -225,12 +238,16 @@ with tabs[1]:
     st.caption("Real things and the real links between them. Drag to move, "
                "scroll to zoom.")
 
-    c1, c2 = st.columns([1, 2], vertical_alignment="bottom")
+    c1, c2, c3 = st.columns([1.2, 1.8, 0.8], vertical_alignment="bottom")
     rel_names = ["all links"] + sorted(onto.relations)
     rel = c1.selectbox("Show", rel_names)
     size = c2.slider("How much of it", 50, 1200, 300, step=50,
                      help="Number of links drawn. More shows shape; "
                           "fewer is readable.")
+    layout = c3.selectbox("Layout", ["force", "circular"])
+    show_labels = st.toggle("Labels", value=True,
+                            help="Names come from label/name/title props; "
+                                 "internal ids are the fallback.")
 
     nodes, edges = graph.subgraph(
         limit=size, relation=None if rel == "all links" else rel)
@@ -240,33 +257,72 @@ with tabs[1]:
                    "no columns named after other tables.",
                    icon=":material/link_off:")
     else:
+        # A picture is read by people: use the node's label, not its id, but
+        # keep the names unique so ECharts can still bind links to nodes.
+        label_of: dict[str, str] = {}
+        used: set[str] = set()
+        for n in nodes:
+            base = str(n.get("label") or n["key"])
+            name, i = base, 2
+            while name in used:
+                name = f"{base} ({i})"
+                i += 1
+            used.add(name)
+            label_of[n["id"]] = name
+
         kinds = sorted({n["class"] for n in nodes})
         st.echarts_chart({
-            "tooltip": {},
-            "legend": [{"data": kinds, "top": 0}],
+            "backgroundColor": "transparent",
+            "tooltip": {"trigger": "item", "confine": True},
+            "legend": [{"data": kinds, "top": 0,
+                        "textStyle": {"fontSize": 11}}],
+            "animationDuration": 700,
             "series": [{
-                "type": "graph", "layout": "force", "roam": True,
+                "type": "graph", "layout": layout, "roam": True,
+                "draggable": True,
                 "categories": [{"name": k_,
                                 "itemStyle": {"color": colour_of(k_, order)}}
                                for k_ in kinds],
-                "label": {"show": len(nodes) <= 60, "position": "right",
-                          "fontSize": 9},
-                "emphasis": {"focus": "adjacency"},
-                "force": {"repulsion": 160, "edgeLength": 70,
-                          "gravity": 0.08},
-                "lineStyle": {"opacity": 0.5, "curveness": 0.08},
-                # Size by how connected a thing is. Drawn all the same
-                # size, a hub and a leaf are indistinguishable and the
-                # picture says nothing a table could not.
-                "data": [{"name": n["id"], "value": n["key"],
-                          "category": kinds.index(n["class"]),
-                          "symbolSize": min(46, 8 + 3.2 * n["degree"])}
-                         for n in nodes],
-                "links": [{"source": e["source"], "target": e["target"],
-                           "value": e["relation"]} for e in edges],
+                "label": {
+                    "show": show_labels, "position": "right",
+                    "fontSize": 10, "fontWeight": 500, "color": "#334155"},
+                "labelLayout": {"hideOverlap": True},
+                "emphasis": {
+                    "focus": "adjacency",
+                    "label": {"show": True, "fontWeight": "bold"},
+                    "lineStyle": {"width": 2.6, "opacity": 1}},
+                "itemStyle": {
+                    "borderColor": "#ffffff", "borderWidth": 2,
+                    "shadowBlur": 6, "shadowColor": "rgba(15,23,42,0.18)"},
+                "lineStyle": {
+                    "color": "#94a3b8", "opacity": 0.45, "width": 1.2,
+                    "curveness": 0.16},
+                "force": {"repulsion": 220, "edgeLength": 90,
+                          "gravity": 0.06, "friction": 0.2},
+                # Size by how connected a thing is. Drawn all the same size, a
+                # hub and a leaf are indistinguishable and the picture says
+                # nothing a table could not.
+                "data": [{
+                    "name": label_of[n["id"]],
+                    "value": n["degree"],
+                    "category": kinds.index(n["class"]),
+                    "symbolSize": min(52, 12 + 3.0 * n["degree"]),
+                } for n in nodes],
+                "links": [{
+                    "source": label_of[e["source"]],
+                    "target": label_of[e["target"]],
+                    "value": e["relation"],
+                    # A guessed link is dashed, the same rule as the tables.
+                    "lineStyle": {
+                        "type": "dashed" if e.get("provenance") != "measured"
+                                else "solid",
+                        "opacity": 0.35 if e.get("provenance") != "measured"
+                                   else 0.55},
+                } for e in edges],
             }],
         }, alt=f"{len(nodes):,} things and {len(edges):,} links between "
-               f"them, coloured by kind", height=620)
+               f"them, coloured by kind; solid = measured, dashed = derived",
+            height=640)
 
         g1, g2, g3 = st.columns(3, border=True)
         g1.metric("Things drawn", f"{len(nodes):,}")
@@ -275,9 +331,10 @@ with tabs[1]:
         busiest = max(nodes, key=lambda n: n["degree"])
         st.caption(
             f"Bigger means more connected — the busiest thing drawn is "
-            f"**{busiest['class']} {busiest['key']}** with "
-            f"{busiest['degree']} links. Hover to highlight what something "
-            f"touches. Colours match the chart in Ontology.")
+            f"**{busiest.get('label') or busiest['key']}** "
+            f"({busiest['class']}) with {busiest['degree']} links. "
+            f"Hover to highlight what something touches; labels come from the "
+            f"data, not the schema. Colours match the Ontology tab.")
 
 # ====================================================== 3 · SEMANTIC
 with tabs[2]:
@@ -333,24 +390,20 @@ with tabs[3]:
         st.info("Nothing of this kind was built.", icon=":material/info:")
     else:
         akey = a2.selectbox("Which one", akeys, key="akey")
-        facts = [Fact(f"{acls} {akey} exists in {schema.name}.",
-                      "measured", weight=10)]
-        for k_, v in list(row_for(graph, schema, onto,
-                                  acls, akey).items())[:8]:
-            if v not in (None, ""):
-                facts.append(Fact(f"Its {k_} is {v}.", "measured", 5))
-        for r in sorted(graph.reach(acls, akey, None, depth=2))[:12]:
-            kind, which = r.split(":", 1)
-            rel_ = next((x for x in onto.relations.values()
-                         if kind in (x.range, x.domain)), None)
-            facts.append(Fact(f"It connects to {kind} {which}.",
-                              rel_.provenance if rel_ else "derived", 3))
-        kept = fit(facts, BUDGET)
-        st.code(render(kept), language="text")
-        b1, b2 = st.columns(2, border=True)
-        b1.metric("Facts gathered", len(facts))
-        b2.metric("Facts that fit", len(kept))
+        out = build_context(
+            graph, [(schema.name, schema, onto)],
+            entity=(schema.name, acls, akey), budget_chars=BUDGET)
+        st.code(out["rendered"] or "(no facts)", language="text")
+        b1, b2, b3 = st.columns(3, border=True)
+        b1.metric("Facts kept", len(out["facts"]))
+        b2.metric("Dropped", len(out["dropped"]))
+        b3.metric("Review pending", out["review_pending"])
         st.caption("When something must go, a guess is dropped before a "
                    "measurement, and a fact is dropped whole rather than "
                    "cut in half — half a sentence of evidence still reads "
                    "as complete.")
+        if out["dropped"]:
+            with st.expander(f"What was left out ({len(out['dropped'])})"):
+                for fact in out["dropped"]:
+                    st.markdown(f"- {fact['text']}  \n  "
+                                f"`{fact['provenance']}`")

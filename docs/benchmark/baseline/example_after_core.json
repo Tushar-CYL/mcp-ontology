@@ -1,0 +1,87 @@
+{
+  "tool": "benchmark.py",
+  "generated_at": "2026-10-29T18:02:24+00:00",
+  "source": "data\\example.db",
+  "fixture": null,
+  "fixture_generated": false,
+  "python": "3.14.7",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "stages": {
+    "connect": {
+      "ok": true,
+      "seconds": 0.178757,
+      "tables": 4,
+      "rows": 21,
+      "formats": {
+        "database": 4
+      },
+      "name": "example"
+    },
+    "discover": {
+      "ok": true,
+      "seconds": 0.002533,
+      "classes": 4,
+      "relations": 3,
+      "measured_relations": 3,
+      "derived_relations": 0,
+      "renamed_classes": 0
+    },
+    "graph": {
+      "ok": true,
+      "open_seconds": 0.074541,
+      "cold_build_seconds": 0.277412,
+      "nodes": 21,
+      "edges": 21,
+      "skipped_edges": 0,
+      "dangling_edges": 0,
+      "dangling_check_seconds": 0.003672,
+      "findings": 0,
+      "file_bytes": 5255168,
+      "file_mib": 5.012,
+      "path": "data\\bench_graphs\\bench_data_example_db.duckdb",
+      "warm_reopen_seconds": 0.073511,
+      "is_current_warm": true,
+      "warm_nodes": 21,
+      "warm_edges": 21,
+      "warm_query_ok": true
+    },
+    "semantic": {
+      "ok": true,
+      "discover_seconds": 8.4e-05,
+      "discovered": 22,
+      "compile_seconds": 0.080202,
+      "compiled": 22,
+      "compile_failures": 0,
+      "executed": 22,
+      "execute_failures": 0,
+      "sample_metric": "quantity_sum",
+      "sample_metric_title": "sum of quantity in OrderLine",
+      "sample_rows": 1,
+      "query_runs": 20,
+      "query_p50_ms": 0.832,
+      "query_p95_ms": 1.022,
+      "query_min_ms": 0.646,
+      "query_max_ms": 1.167,
+      "sample_sql": "SELECT sum(\"quantity\") AS value\nFROM \"src_example__order_lines\"\nLIMIT 100"
+    },
+    "context": {
+      "ok": true,
+      "seconds": 0.018177,
+      "class": "Customer",
+      "key": "2",
+      "facts_gathered": 5,
+      "facts_kept": 5,
+      "chars": 195
+    }
+  },
+  "errors": [],
+  "findings": [],
+  "limits": {
+    "query_runs": 20,
+    "query_warmup": 3,
+    "execute_limit": 25,
+    "context_budget_chars": 900
+  },
+  "duckdb": "2.0.0",
+  "total_seconds": 0.793791
+}

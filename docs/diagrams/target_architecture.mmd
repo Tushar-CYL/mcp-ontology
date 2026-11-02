@@ -1,0 +1,15 @@
+flowchart TB
+  SRC["SOURCES (read-only)<br/>SQLite/DuckDB · CSV/Parquet/JSON/Excel · Postgres/MySQL · Snowflake*/Databricks*"] --> CON["connect_many + profile"]
+  CON --> ONT["L1 ONTOLOGY<br/>classes · keys · relations · time · measures<br/>confidence + provenance"]
+  ONT --> KG["L2 KNOWLEDGE GRAPH<br/>nodes · bitemporal edges · source · findings"]
+  KG --> RES["CROSS-SOURCE RESOLUTION<br/>same_as · confidence · attribute precedence"]
+  RES --> REV{"REVIEW GATE<br/>approve · edit · reject · audit"}
+  ONT --> REV
+  REV -->|approved| SEM["L3 SEMANTIC<br/>metric catalogue · owners · definitions"]
+  SEM --> ACB["L4 AGENT CONTEXT BUILDER<br/>task -> evidence -> budget -> citations -> dropped"]
+  ACB --> API["API / MCP<br/>trust envelope"]
+  API --> USERS["AGENTS · BI · APPS"]
+  REV -. "pending items" .-> UI["Review UI"]
+  USERS -. "questions" .-> ACB
+  DB["Storage: DuckDB graph file<br/>+ vector/BM25 index (retrieval only)"] --- KG
+  DB --- ACB

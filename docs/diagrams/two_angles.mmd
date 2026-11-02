@@ -1,0 +1,19 @@
+flowchart LR
+  subgraph AUTH["AUTHORING ANGLE (create)"]
+    A1["Any source<br/>SQLite · CSV · Parquet · JSON · Postgres"] --> A2["Auto-derive<br/>ontology · graph · metric proposals"]
+    A2 --> A3["Confidence labels<br/>measured / derived"]
+    A3 --> A4["Review gate<br/>names · inferred links · metrics · policy"]
+    A4 --> A5["Publish"]
+  end
+  subgraph CONS["CONSUMPTION ANGLE (consume)"]
+    B1["Agent / BI / app"] --> B2["MCP / FastAPI<br/>ontology · graph · metric · context"]
+    B2 --> B3["Trust envelope<br/>facts · sources · as-of · dropped · latency"]
+  end
+  A5 --> B2
+  B3 --> B1
+  subgraph STORE["Storage (not a layer)"]
+    D1["DuckDB graph file"]
+    D2["Vector / BM25 index (retrieval only)"]
+  end
+  A2 --- D1
+  B2 --- D2

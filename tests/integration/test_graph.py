@@ -527,3 +527,65 @@ class TestMetricsWorkOnEverySourceType:
     def test_both_give_the_same_answer(self, as_db, as_csv, tmp_path):
         assert self._total(as_db, tmp_path, "d2") == \
                self._total(as_csv, tmp_path, "c2")
+
+
+class TestConnectionReuse:
+    """One Streamlit session can query while another request is in flight.
+
+    DuckDB refuses concurrent calls on one connection instead of queueing.
+    A shared Graph is used by every tab of the app, so every read must be
+    serialised by the Graph itself, not by luck.
+    """
+
+    def test_many_queries_in_sequence(self, graph):
+        for _ in range(20):
+            assert graph.one("SELECT count(*) FROM nodes") > 0
+            assert graph.class_counts()
+            assert graph.source_ids()
+            graph.instances("Customer", limit=2)
+            graph.subgraph(limit=3)
+
+    def test_parallel_reads_do_not_hit_a_busy_connection(self, graph):
+        from concurrent.futures import ThreadPoolExecutor
+
+        def read(_):
+            return (graph.one("SELECT count(*) FROM nodes"),
+                    len(graph.class_counts()),
+                    graph.count_class("Customer"))
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(read, range(64)))
+        assert len(results) == 64
+        assert all(nodes > 0 for nodes, _, _ in results)
+
+
+class TestSubgraphLabels:
+    """A graph picture must show names a person recognises, not internal ids."""
+
+    def test_nodes_carry_a_display_label(self, tmp_path):
+        d = tmp_path / "named"
+        d.mkdir()
+        (d / "customers.csv").write_text(
+            "customer_id,name,city\nc1,Ada,London\nc2,Grace,York\n",
+            encoding="utf-8")
+        (d / "orders.csv").write_text(
+            "order_id,customer_id,total\no1,c1,10\no2,c2,20\n",
+            encoding="utf-8")
+        schema = connect(str(d)); onto = discover(schema)
+        g = open_graph(tmp_path / "labels.duckdb")
+        build(g, schema, onto, source="shop")
+        nodes, _ = g.subgraph(limit=20)
+        labels = {n["label"] for n in nodes}
+        assert labels, "every node must have a label"
+        assert {"Ada", "Grace"} & labels, "props name should be used"
+
+    def test_a_node_without_a_name_falls_back_to_a_short_key(self, tmp_path):
+        d = tmp_path / "bare"
+        d.mkdir()
+        (d / "a.csv").write_text("id,other\nx1,one\nx2,two\n", encoding="utf-8")
+        (d / "b.csv").write_text("id,a_id\ny1,x1\n", encoding="utf-8")
+        schema = connect(str(d)); onto = discover(schema)
+        g = open_graph(tmp_path / "bare.duckdb")
+        build(g, schema, onto, source="bare")
+        nodes, _ = g.subgraph(limit=20)
+        assert all(n.get("label") for n in nodes)

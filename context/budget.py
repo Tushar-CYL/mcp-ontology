@@ -27,26 +27,44 @@ class Fact:
     provenance: str = "measured"
     weight: float = 1.0
     when: str | None = None
+    # Where the fact came from: `table:column:key`, a node id, a metric name.
+    # A citation is not the same thing as a provenance label: one tells you
+    # which row, the other tells you whether we measured or guessed.
+    citation: str | None = None
 
 
-def fit(facts: list[Fact], max_chars: int) -> list[Fact]:
-    """The most valuable facts that fit, in their original order."""
+def pack(facts: list[Fact], max_chars: int) -> tuple[list[Fact], list[Fact]]:
+    """Return (kept, dropped).
+
+    A measurement outranks a guess of equal weight. A fact that does not fit is
+    dropped whole, never truncated. `dropped` is returned, not discarded: the
+    answer must be able to say what it left out and why.
+    """
     if not facts:
-        return []
+        return [], []
     ordered = sorted(
         enumerate(facts),
         key=lambda p: (-p[1].weight, RANK.get(p[1].provenance, 9), p[0]))
 
-    kept, used = [], 0
+    kept, dropped, used = [], [], 0
     for idx, fact in ordered:
         size = len(fact.text)
         if used + size > max_chars:
+            dropped.append((idx, fact))
             continue          # skip it, keep looking: a later fact may fit
         kept.append((idx, fact))
         used += size
     # Back into the order the caller gave them, which is the order that
     # reads as an argument rather than a ranked list.
-    return [f for _, f in sorted(kept, key=lambda p: p[0])]
+    kept_facts = [f for _, f in sorted(kept, key=lambda p: p[0])]
+    dropped_facts = [f for _, f in sorted(dropped, key=lambda p: p[0])]
+    return kept_facts, dropped_facts
+
+
+def fit(facts: list[Fact], max_chars: int) -> list[Fact]:
+    """The most valuable facts that fit, in their original order."""
+    kept, _ = pack(facts, max_chars)
+    return kept
 
 
 def render(facts: list[Fact]) -> str:
@@ -61,5 +79,6 @@ def render(facts: list[Fact]) -> str:
         tag = {"measured": "measured", "derived": "derived (a guess)",
                "external": "external"}.get(f.provenance, f.provenance)
         when = f"  as at {f.when}" if f.when else ""
-        lines.append(f"- {f.text}\n      [{tag}]{when}")
+        cite = f"  cite: {f.citation}" if f.citation else ""
+        lines.append(f"- {f.text}\n      [{tag}]{when}{cite}")
     return "\n".join(lines)
