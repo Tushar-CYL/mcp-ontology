@@ -3,6 +3,52 @@
 Derived from `docs/research/`, `gap_analysis.md` and `better_version_blueprint.md`.
 Audience: manager, Arin (story), and the eventual company pitch.
 
+## 0. Strata today — the layer agents connect to (current packaging)
+
+**Strata does not build agents.** Agents are built anywhere (Copilot Studio,
+Databricks, Claude, Cursor). Strata is the governed *reference content* they
+connect to: ontology, knowledge graph, glossary, approved metrics and cited
+context, served read-only over MCP with a per-agent key and scope. This follows
+the pattern of NVIDIA auto-ontology: Discover → Ground → Validate → Expose → Learn.
+
+### Who creates, who consumes
+
+| Package (sidebar group) | Creates it | Consumes it | Screens | Compare with |
+|---|---|---|---|---|
+| **Govern** — AI for data | Data stewards, governance team | Data engineers, auditors, every agent | Ontology, Knowledge graph, **Glossary** (terms → columns, synonyms), Context Factory (conflicts, **corrections**), Certification | Atlan, Collibra |
+| **Analytics** — AI for BI | Analytics engineers, BI team | Dashboards, analysts, business users | Semantic metrics (definitions, health, **Check agent SQL**, usage by agents) | AtScale, dbt semantic layer |
+| **Serve agents** | AI teams register agents | Any external agent | Context packs, **Agent connections** (scope, keys, connect snippets, test, usage) | — the missing layer |
+
+After a source is connected, onboarding asks *"what do you want to do with this
+data?"* and sends each team to its own starting screen.
+
+### The five stages, as built
+
+| Stage | What Strata does | Where |
+|---|---|---|
+| Discover | Ontology and knowledge graph derived from the data | `ontology/`, `knowledge_graph/` |
+| Ground | Glossary terms mapped to real columns, synonyms; edits go to review | `semantic/glossary.py`, Glossary page |
+| Validate | Agent-written SQL checked against the certified definition (filters, measure, PII, compiles) | `semantic/validate.py`, MCP `validate_sql` |
+| Expose | MCP over HTTP at `/mcp`, 14 read-only tools, per-agent keys and scope | `api/mcp_server.py`, `agent/connections.py` |
+| Learn | "This answer was wrong" becomes a review proposal; usage per metric is tracked | `semantic/feedback.py`, Factory → Corrections |
+
+### Demo script (8 minutes)
+
+1. **Connect** the revenue source; onboarding offers three paths.
+2. **Govern**: in Glossary, add the synonym "purchase" to *Order*, map it to
+   `orders.order_id`; it goes to review; approve it.
+3. **Analytics**: in Semantic metrics, paste `SELECT SUM(line_revenue) FROM
+   order_lines` into *Check agent SQL* → **warn**: certified Revenue only counts
+   `o.status = 'completed'`. This is the number an agent would have got wrong.
+4. **Serve agents**: in Agent connections, register "Finance copilot" with
+   Revenue only, issue a key, copy the **Claude Code** command and run it.
+5. In Claude Code ask *"Using strata, why did West revenue fall in October
+   2026?"* — it calls `check_readiness`, `check_answerable`, `get_context` and
+   answers with cited facts. Ask for the refund rate: refused (out of scope).
+6. Back in Agent connections, **Usage** shows every call, including the refusal.
+7. In the test console, mark an answer wrong; in Context Factory →
+   **Corrections**, the steward accepts it. Nothing changed until they did.
+
 ## 1. One sentence
 
 > **The auto-authoring, provenance-first middle layer:** turn any data source

@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChartColumn, Copy, Play, RefreshCw, Square, Table2 } from 'lucide-react'
-import { api, isAbortError } from '../../api/client'
+import { ChartColumn, Copy, Play, RefreshCw, ShieldCheck, Square, Table2 } from 'lucide-react'
+import { api, isAbortError, describeError } from '../../api/client'
 import type {
   EvaluateMetricRequest,
   EvaluateMetricResponse,
+  MetricHealthResponse,
   MetricRow,
   MetricSummary,
   SourceSummary,
 } from '../../api/types'
 import { Badge } from '../../components/Badge'
 import { Button } from '../../components/Button'
+import { Callout } from '../../components/Callout'
 import { Card } from '../../components/Card'
 import { EChart, type ChartOption } from '../../components/EChart'
 import { EmptyState } from '../../components/EmptyState'
@@ -27,6 +29,9 @@ import { copyText } from '../../utils/download'
 import { formatValue, humanize, truncate } from '../../utils/format'
 import { statusLabel, statusTone } from '../../utils/status'
 import { cx } from '../../utils/cx'
+import { MetricUsageBadge, SqlValidator } from '../../components/SqlValidator'
+import { MetricCharts } from '../../components/MetricCharts'
+import { SynonymsEditor } from '../../components/SynonymsEditor'
 
 export function SemanticPanel() {
   useDocumentTitle('Semantic')
@@ -163,6 +168,35 @@ function MetricListItem({
 function SemanticView({ source }: { source: SourceSummary }) {
   const toast = useToast()
   const metrics = useAsync((signal) => api.metrics(source.id, signal), [source.id])
+  const [approving, setApproving] = useState<string | null>(null)
+  const drafts = (metrics.data?.metrics ?? []).filter((m) => m.status === 'draft')
+
+  const approveOne = async (name: string) => {
+    setApproving(name)
+    try {
+      await api.setMetricStatus(name, source.id, 'approved')
+      toast.push({ tone: 'success', title: 'Metric approved', message: 'Agents can use it now.' })
+      metrics.reload()
+    } catch (cause) {
+      toast.push({ tone: 'error', title: 'Could not approve', message: describeError(cause).message })
+    } finally {
+      setApproving(null)
+    }
+  }
+
+  const approveAll = async () => {
+    setApproving('*')
+    try {
+      const result = await api.approveProposedMetrics(source.id)
+      toast.push({ tone: 'success', title: `${result.approved.length} metrics approved` })
+      metrics.reload()
+    } catch (cause) {
+      toast.push({ tone: 'error', title: 'Could not approve', message: describeError(cause).message })
+    } finally {
+      setApproving(null)
+    }
+  }
+
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [groupBy, setGroupBy] = useState('')
@@ -177,7 +211,29 @@ function SemanticView({ source }: { source: SourceSummary }) {
 
   const list = useMemo(() => metrics.data?.metrics ?? [], [metrics.data])
   const selected =
-    list.find((metric) => metric.name === selectedName) ?? list[0] ?? null
+    list.find((metric) => metric.name === selectedName)
+    ?? list.find((metric) => metric.name === 'revenue')
+    ?? list[0] ?? null
+  const health = useAsync(
+    (signal) =>
+      selected
+        ? api.metricHealth(selected.name, source.id, signal)
+        : Promise.resolve(undefined),
+    [selected?.name, source.id],
+    { enabled: Boolean(selected) },
+  )
+
+  useEffect(() => {
+    const max = health.data?.time_max
+    if (!max || timeFrom || timeTo) return
+    const latest = new Date(`${String(max).slice(0, 10)}T00:00:00`)
+    if (Number.isNaN(latest.getTime())) return
+    const start = new Date(latest.getFullYear(), latest.getMonth(), 1)
+    const end = new Date(latest.getFullYear(), latest.getMonth() + 1, 1)
+    const iso = (value: Date) => value.toISOString().slice(0, 10)
+    setTimeFrom(iso(start))
+    setTimeTo(iso(end))
+  }, [health.data, timeFrom, timeTo])
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase()
@@ -218,13 +274,14 @@ function SemanticView({ source }: { source: SourceSummary }) {
           type: 'bar',
           barMaxWidth: 38,
           data: normalized.values,
-          itemStyle: { color: '#4f46e5', borderRadius: [4, 4, 0, 0] },
-          emphasis: { itemStyle: { color: '#4338ca' } },
+          itemStyle: { color: '#2e2e38', borderRadius: [2, 2, 0, 0] },
+          emphasis: { itemStyle: { color: '#ffe600', borderColor: '#2e2e38', borderWidth: 1 } },
         },
       ],
     }
   }, [normalized])
 
+  const healthData: MetricHealthResponse | undefined = health.data
   const selectMetric = (metric: MetricSummary) => {
     setSelectedName(metric.name)
     setResult(null)
@@ -240,7 +297,11 @@ function SemanticView({ source }: { source: SourceSummary }) {
     setEvaluating(true)
     setEvaluateError(null)
 
-    const payload: EvaluateMetricRequest = { source: source.id }
+    const payload: EvaluateMetricRequest = {
+      source: source.id,
+      compare_previous: true,
+      preview_draft: selected.status === 'draft',
+    }
     if (groupBy.trim()) payload.group_by = groupBy.trim()
     if (timeFrom) payload.time_from = timeFrom
     if (timeTo) payload.time_to = timeTo
@@ -298,8 +359,8 @@ function SemanticView({ source }: { source: SourceSummary }) {
       <Card title="What you can measure" bodyPadding="compact">
         <EmptyState
           icon={ChartColumn}
-          title="No metrics were defined for this source"
-          description="A source with numeric columns gets metric definitions automatically. This one produced none — nothing is invented to fill the gap."
+          title="No metrics for this source yet"
+          description="Strata proposes metrics from the data when a source is connected or the server restarts. Restart the server to get proposals for a source connected before this feature."
         />
       </Card>
     )
@@ -309,7 +370,7 @@ function SemanticView({ source }: { source: SourceSummary }) {
     <div className="semantic-layout">
       <Card
         title="Metric definitions"
-        subtitle={`${list.length} ${list.length === 1 ? 'metric' : 'metrics'}, each compiled from a real column.`}
+        subtitle={`${list.length} ${list.length === 1 ? 'metric' : 'metrics'}, each compiled to one SQL definition.`}
         bodyPadding="compact"
         actions={
           <Button
@@ -323,6 +384,17 @@ function SemanticView({ source }: { source: SourceSummary }) {
           </Button>
         }
       >
+        {drafts.length > 0 ? (
+          <Callout tone="warning" title={`${drafts.length} proposed from your data`}>
+            Strata read the tables and proposed these metrics. Check a definition, preview it,
+            then approve it. Agents only use approved metrics.
+            <div className="form-actions">
+              <Button size="sm" variant="primary" loading={approving === '*'} onClick={() => void approveAll()}>
+                Approve all proposed
+              </Button>
+            </div>
+          </Callout>
+        ) : null}
         <TextInput
           label="Filter"
           placeholder="Search by name, title or description"
@@ -355,10 +427,17 @@ function SemanticView({ source }: { source: SourceSummary }) {
               <div className="chip-row">
                 {selected.unit ? <Badge tone="indigo">{selected.unit}</Badge> : null}
                 {selected.owner ? <Badge tone="slate">{selected.owner}</Badge> : null}
+                <MetricUsageBadge source={source.id} metric={selected.name} />
                 {selected.status ? (
                   <Badge tone={statusTone(selected.status)} dot>
                     {statusLabel(selected.status)}
                   </Badge>
+                ) : null}
+                {selected.status === 'draft' ? (
+                  <Button size="sm" variant="primary" loading={approving === selected.name}
+                    onClick={() => void approveOne(selected.name)}>
+                    Approve
+                  </Button>
                 ) : null}
               </div>
             }
@@ -437,6 +516,49 @@ function SemanticView({ source }: { source: SourceSummary }) {
           </Card>
         ) : null}
 
+        {selected ? <MetricCharts key={`${selected.name}:${selected.status}`} source={source.id} metric={selected} /> : null}
+
+        {healthData ? (
+          <Card
+            title="Metric health"
+            subtitle="Source rows, time coverage, dimensions and missing dates behind this definition."
+            actions={
+              <Badge tone={healthData.score >= 90 ? 'teal' : healthData.score >= 70 ? 'amber' : 'rose'} icon={<ShieldCheck size={13} aria-hidden="true" />}>
+                {healthData.score}/100
+              </Badge>
+            }
+          >
+            <div className="metric-health">
+              {healthData.checks.map((check) => (
+                <div className={check.passed ? 'metric-check metric-check--pass' : 'metric-check metric-check--fail'} key={check.name}>
+                  <span className="metric-check__dot" aria-hidden="true" />
+                  <div>
+                    <p className="metric-check__name">{check.name}</p>
+                    <p className="metric-check__detail">{check.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {selected?.caveats ? (
+              <Callout tone="warning" title="Caveat">
+                {selected.caveats}
+              </Callout>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {selected ? (
+          <SynonymsEditor
+            key={`${selected.name}:${(selected.synonyms ?? []).join('|')}`}
+            source={source.id}
+            metric={selected.name}
+            synonyms={selected.synonyms ?? []}
+            onSaved={metrics.reload}
+          />
+        ) : null}
+
+        {selected ? <SqlValidator key={selected.name} source={source.id} metric={selected.name} /> : null}
+
         {evaluateError ? (
           <Card title="Evaluation failed" bodyPadding="compact">
             <ErrorState error={evaluateError} onRetry={() => void runEvaluation()} compact />
@@ -458,6 +580,32 @@ function SemanticView({ source }: { source: SourceSummary }) {
                 <p className="muted">
                   One governed number. The same definition produces this value in every caller.
                 </p>
+              </Card>
+            ) : null}
+
+            {result && result.prior !== undefined && result.prior !== null ? (
+              <Card title="Period comparison" subtitle="Same definition, same filters, the preceding window of equal length.">
+                <div className="metric-comparison">
+                  <div>
+                    <span>Current</span>
+                    <strong>{result.formatted?.[0] ?? formatValue(normalized?.singleValue)}</strong>
+                    <small>{result.window?.from} → {result.window?.to}</small>
+                  </div>
+                  <div>
+                    <span>Prior</span>
+                    <strong>{formatValue(result.prior)}</strong>
+                    <small>{result.prior_window?.from} → {result.prior_window?.to}</small>
+                  </div>
+                  <div>
+                    <span>Change</span>
+                    <strong className={(result.change ?? 0) < 0 ? 'metric-delta--down' : 'metric-delta--up'}>
+                      {result.change_pct !== null && result.change_pct !== undefined
+                        ? `${result.change_pct >= 0 ? '+' : ''}${result.change_pct.toFixed(2)}%`
+                        : '—'}
+                    </strong>
+                    <small>{formatValue(result.change)}</small>
+                  </div>
+                </div>
               </Card>
             ) : null}
 

@@ -29,6 +29,7 @@ so two sources can both have a `Customer` and a key of `1` without colliding.
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 
 from ontology.discover import Ontology, stable_code
@@ -110,16 +111,44 @@ def build(graph, schema: Schema, onto: Ontology, source: str = "",
           echo: bool = False, progress=None) -> dict:
     """Populate one source in the graph. Returns counts.
 
-    The graph lock is held for the whole build: a build runs many direct
-    statements on the shared connection, and a UI tab reading at the same time
-    must wait rather than hit DuckDB's busy error.
+    The build runs on its own connection inside one transaction (see
+    `Graph.writer`): readers are never blocked and see the previous data
+    until the new data commits; a failed build rolls back completely.
     """
-    with graph.lock:
-        return _build(graph, schema, onto, source, echo, progress)
+    writer = graph.writer() if hasattr(graph, "writer") else graph
+    if writer is graph:
+        with graph.lock:
+            return _build(graph, schema, onto, source, echo, progress)
+    src = source or schema.name
+    slug = source_slug(src)
+    say = progress or (lambda _: None)
+    try:
+        # Phase 1, outside the transaction: copy the raw tables under fresh
+        # names. Attached databases (SQLite, Postgres) cannot be detached
+        # while a transaction has touched them, and the copies are new tables
+        # that no reader depends on yet.
+        say(f"  reading the source ({len(schema.tables)} tables)")
+        _materialise(writer, schema, src, slug, say)
+        _materialise_keys(writer, schema, onto, src, slug, say)
+        # Phase 2, atomic: replace the graph rows. Readers keep the previous
+        # graph until COMMIT; a failure rolls back to it.
+        writer.con.execute("BEGIN TRANSACTION")
+        stats = _build(writer, schema, onto, source, echo, progress,
+                       materialised=True)
+        writer.con.execute("COMMIT")
+        return stats
+    except Exception:
+        try:
+            writer.con.execute("ROLLBACK")
+        except Exception:                          # noqa: BLE001 - already closed
+            pass
+        raise
+    finally:
+        writer.con.close()
 
 
 def _build(graph, schema: Schema, onto: Ontology, source: str,
-           echo: bool, progress) -> dict:
+           echo: bool, progress, materialised: bool = False) -> dict:
     """The build itself (called with the graph lock held).
 
     `progress` is called with a line of text after each step. Building a large
@@ -131,16 +160,18 @@ def _build(graph, schema: Schema, onto: Ontology, source: str,
     say = progress or (lambda _: None)
     t0 = time.monotonic()
 
-    clear_source(graph, src)
+    clear_source(graph, src, drop_tables=not materialised)
     _register_source(graph, schema, src)
 
-    say(f"  reading the source ({len(schema.tables)} tables)")
-    _materialise(graph, schema, src, slug, say)
-    _materialise_keys(graph, schema, onto, src, slug, say)
+    if not materialised:
+        say(f"  reading the source ({len(schema.tables)} tables)")
+        _materialise(graph, schema, src, slug, say)
+        _materialise_keys(graph, schema, onto, src, slug, say)
 
     class_codes, relation_codes = _register(graph, onto, src, slug)
 
-    stats = {"source": src, "nodes": 0, "edges": 0, "skipped_edges": 0}
+    stats = {"source": src, "nodes": 0, "edges": 0, "skipped_edges": 0,
+             "rejected": []}
     for cls in onto.classes.values():
         t = time.monotonic()
         n = _nodes(graph, schema, cls, class_codes[cls.name], src, slug, echo)
@@ -154,6 +185,16 @@ def _build(graph, schema: Schema, onto: Ontology, source: str,
         made, missed = _edges(graph, schema, onto, rel,
                               relation_codes[rel.name], class_codes,
                               src, slug, echo)
+        # A GUESSED link is checked against the data: if most rows point at
+        # nothing, it was a coincidence of column names, not a relationship.
+        if rel.provenance != "measured" and made < LINK_MATCH * (made + missed):
+            graph.con.execute(
+                "DELETE FROM edges WHERE source_id = ? AND rel = ?",
+                [src, relation_codes[rel.name]])
+            stats["rejected"].append(rel.name)
+            say(f"  {rel.name:<22} rejected: only {made:,} of "
+                f"{made + missed:,} rows matched")
+            continue
         stats["edges"] += made
         stats["skipped_edges"] += missed
         extra = f"  ({missed:,} had no match)" if missed else ""
@@ -172,6 +213,7 @@ def _build(graph, schema: Schema, onto: Ontology, source: str,
 
     sig = signature(schema, onto, src)
     _set_info(graph, _signature_key(slug), sig)
+    _set_info(graph, f"rejected:{slug}", json.dumps(stats["rejected"]))
     _set_info(graph, f"source:{slug}", src)
     graph.con.execute(
         "UPDATE sources SET signature = ?, built_at = now(), status = 'built',"
@@ -180,6 +222,16 @@ def _build(graph, schema: Schema, onto: Ontology, source: str,
          src])
     say(f"  built in {time.monotonic() - t0:,.0f}s")
     return stats
+
+
+LINK_MATCH = 0.5        # a guessed link must match at least half its rows
+
+
+def rejected_links(graph, source: str) -> list[str]:
+    """Guessed links the last build rejected for this source."""
+    raw = graph.one("SELECT value FROM build_info WHERE key = ?",
+                    [f"rejected:{source_slug(source)}"])
+    return json.loads(raw) if raw else []
 
 
 def build_many(graph, bundles, echo: bool = False, progress=None) -> dict:
@@ -203,8 +255,9 @@ def build_many(graph, bundles, echo: bool = False, progress=None) -> dict:
     return results
 
 
-def clear_source(graph, source: str) -> None:
-    """Remove one source's rows and materialised tables before a rebuild."""
+def clear_source(graph, source: str, drop_tables: bool = True) -> None:
+    """Remove one source's rows (and, unless told otherwise, its
+    materialised tables) before a rebuild."""
     if not source:
         return
     slug = source_slug(source)
@@ -216,8 +269,9 @@ def clear_source(graph, source: str) -> None:
     graph.con.execute("DELETE FROM build_info WHERE key = ?",
                       [_signature_key(slug)])
     graph.con.execute("DELETE FROM sources WHERE source_id = ?", [source])
-    _drop_prefix(graph, f"{SRC}_{slug}__")
-    _drop_prefix(graph, f"keyed_{slug}__")
+    if drop_tables:
+        _drop_prefix(graph, f"{SRC}_{slug}__")
+        _drop_prefix(graph, f"keyed_{slug}__")
 
 
 # ------------------------------------------------------------- registry
@@ -296,6 +350,9 @@ def _materialise(graph, schema: Schema, source: str, slug: str,
     work without rebuilding.
     """
     _drop_prefix(graph, f"{SRC}_{slug}__")
+    # The row-numbered copies of keyless tables are rebuilt from these, so
+    # they go too: reading a stale one would re-number from old rows.
+    _drop_prefix(graph, f"keyed_{slug}__")
 
     if schema.readers:
         for table, reader in schema.readers.items():

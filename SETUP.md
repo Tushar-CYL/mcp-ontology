@@ -22,8 +22,8 @@ No code is written per dataset. The same code reads a hospital database and a
 ```powershell
 python -m pip install -r requirements.txt
 python run.py                 # all four layers in the terminal
-python ui.py                  # four tabs on http://localhost:8501
-python -m pytest -q           # 281 tests
+python run_server.py --port 8000   # UI, API and MCP on http://127.0.0.1:8000
+python -m pytest -q           # the test suite
 ```
 
 `run.py` with no argument builds a small example shop, so a fresh copy always
@@ -125,8 +125,8 @@ any wired-in LLM. See [STATUS.txt](STATUS.txt).
 |---|---|
 | `ModuleNotFoundError` | Run `python -m pip install -r requirements.txt` |
 | `python` not found | Reinstall Python from python.org and tick "Add python.exe to PATH" |
-| Port 8501 in use | `python ui.py` stops stale copies; close any other Streamlit terminal |
-| App shows old code | Run `python ui.py` (it stops the stale copy first) |
+| Port 8000 in use | Stop the other server, or pass `--port 8001` |
+| App shows old code | Rebuild the UI: `cd frontend && npm run build`, then restart the server |
 | Database is locked | DuckDB allows one writer; close other terminals/notebooks |
 | First run feels slow | It is building the graph; later runs reopen it warm |
 | `CERTIFICATE_VERIFY_FAILED` | Corporate TLS interception; see the `truststore` note in `requirements.txt` |
@@ -135,8 +135,8 @@ any wired-in LLM. See [STATUS.txt](STATUS.txt).
 
 ```
 run.py          terminal demo of all four layers
-ui.py           Streamlit launcher (stops a stale copy first)
-app.py          four tabs: Ontology, Knowledge graph, Semantic, Context
+run_server.py   Strata server: React UI, REST API and MCP over HTTP (/mcp)
+frontend/       the React UI (npm run build -> frontend/dist)
 benchmark.py    timing harness, current code
 benchmarks/     deterministic 100-table lake + ground truth
 ontology/       source readers, key inference, discovery

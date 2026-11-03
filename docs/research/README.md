@@ -1,5 +1,10 @@
 # Research pack — how this evidence was gathered
 
+> **Latest: [November 2026 deep research](2026/README.md)** on the four layers
+> and agent presets, with [the synthesis report](2026/REPORT.md) and
+> [catalogue of repos and tools](2026/catalogue.md). It supersedes the older
+> notes below where they disagree.
+
 This folder is the evidence base for the "better middle layer" program. It
 answers three questions the manager asked directly:
 

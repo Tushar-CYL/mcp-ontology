@@ -1,28 +1,51 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ChartColumn, FileText, Layers, Network } from 'lucide-react'
+import { api } from '../api/client'
 import { Badge } from '../components/Badge'
+import { LayerExplainer } from '../components/LayerExplainer'
 import { PageHeader } from '../components/PageHeader'
+import { type LayerId, layerResearch } from '../content/research'
 import { useSource } from '../context/SourceContext'
+import { useAsync } from '../hooks/useAsync'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { cx } from '../utils/cx'
 
-const TABS = [
-  { to: 'ontology', label: 'Ontology', hint: 'What exists', icon: Layers, index: '1' },
-  { to: 'graph', label: 'Knowledge graph', hint: 'What connects', icon: Network, index: '2' },
-  { to: 'semantic', label: 'Semantic', hint: 'What you can measure', icon: ChartColumn, index: '3' },
-  { to: 'context', label: 'Context', hint: 'One packed answer', icon: FileText, index: '4' },
-] as const
+const TABS: Array<{ to: LayerId; label: string; hint: string; icon: typeof Layers; index: string }> = [
+  { to: 'ontology', label: 'Ontology', hint: 'The catalogue', icon: Layers, index: '1' },
+  { to: 'graph', label: 'Knowledge graph', hint: 'The connected map', icon: Network, index: '2' },
+  { to: 'semantic', label: 'Semantic', hint: 'The rulebook', icon: ChartColumn, index: '3' },
+  { to: 'context', label: 'Context', hint: 'The briefing folder', icon: FileText, index: '4' },
+]
 
 export function LayersLayout() {
-  useDocumentTitle('Layers')
+  const { pathname } = useLocation()
+  const current = TABS.find((tab) => pathname.endsWith(`/${tab.to}`)) ?? TABS[0]
+  const research = layerResearch(current.to)
+  useDocumentTitle(research.title)
   const { selectedSource, sources } = useSource()
+  const sourceId = selectedSource?.id ?? ''
+
+  // Server-side cached per source, so moving between layers costs nothing.
+  const certification = useAsync(
+    (signal) => api.certification(sourceId, signal),
+    [sourceId],
+    { enabled: Boolean(sourceId) },
+  )
+  const metrics = useAsync(
+    (signal) => api.metrics(sourceId, signal),
+    [sourceId],
+    { enabled: Boolean(sourceId) },
+  )
+  const approved = metrics.data
+    ? metrics.data.metrics.filter((m) => m.status === 'approved').length
+    : null
 
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Four explainable layers"
-        title="Layers"
-        description="The same source, read four ways. Measured facts and derived inferences are labelled differently on every screen — a guess never looks like a fact."
+        eyebrow={`Layer ${research.number} of 4 · ${research.analogy}`}
+        title={research.title}
+        description={`It answers questions like: "${research.question}"`}
         meta={
           selectedSource ? (
             <div className="page-header__chips">
@@ -30,8 +53,8 @@ export function LayersLayout() {
                 {selectedSource.name || selectedSource.id}
               </Badge>
               <span className="page-header__meta-text">
-                {selectedSource.tables} tables · {selectedSource.classes} classes ·{' '}
-                {selectedSource.nodes.toLocaleString()} nodes
+                {selectedSource.tables} tables · {selectedSource.classes} kinds of thing ·{' '}
+                {selectedSource.nodes.toLocaleString()} records
               </span>
             </div>
           ) : (
@@ -63,6 +86,16 @@ export function LayersLayout() {
           )
         })}
       </nav>
+
+      {selectedSource ? (
+        <LayerExplainer
+          layer={current.to}
+          source={selectedSource}
+          metricCount={approved}
+          certification={certification.data}
+          certificationLoading={certification.loading}
+        />
+      ) : null}
 
       <Outlet />
     </div>

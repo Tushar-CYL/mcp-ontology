@@ -31,25 +31,43 @@ class Fact:
     # A citation is not the same thing as a provenance label: one tells you
     # which row, the other tells you whether we measured or guessed.
     citation: str | None = None
+    # How directly the fact answers the question, and how strong the evidence
+    # is. Both default to 1 so existing callers keep their ordering.
+    relevance: float = 1.0
+    confidence: float = 1.0
+    kind: str = "evidence"
+    reason: str = ""
 
 
-def pack(facts: list[Fact], max_chars: int) -> tuple[list[Fact], list[Fact]]:
+def pack(facts: list[Fact], max_chars: int,
+         dedupe: bool = True) -> tuple[list[Fact], list[Fact]]:
     """Return (kept, dropped).
 
-    A measurement outranks a guess of equal weight. A fact that does not fit is
-    dropped whole, never truncated. `dropped` is returned, not discarded: the
-    answer must be able to say what it left out and why.
+    Ranking is deliberate: weight, then relevance, then provenance, then
+    confidence. A measurement still beats a guess of equal weight. A fact
+    that does not fit is dropped whole, never truncated. `dropped` is returned
+    with a reason, not discarded.
     """
     if not facts:
         return [], []
+    unique: list[tuple[int, Fact]] = []
+    seen: set[tuple[str, str]] = set()
+    for index, fact in enumerate(facts):
+        key = (" ".join(fact.text.lower().split()), fact.citation or "")
+        if dedupe and key in seen:
+            continue
+        seen.add(key)
+        unique.append((index, fact))
     ordered = sorted(
-        enumerate(facts),
-        key=lambda p: (-p[1].weight, RANK.get(p[1].provenance, 9), p[0]))
+        unique,
+        key=lambda p: (-p[1].weight, -p[1].relevance,
+                       RANK.get(p[1].provenance, 9), -p[1].confidence, p[0]))
 
     kept, dropped, used = [], [], 0
     for idx, fact in ordered:
         size = len(fact.text)
         if used + size > max_chars:
+            fact.reason = "does not fit the context budget"
             dropped.append((idx, fact))
             continue          # skip it, keep looking: a later fact may fit
         kept.append((idx, fact))

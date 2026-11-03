@@ -63,7 +63,11 @@ def certify_source(layer, source: str) -> dict:
         " AND nkey <> ''", [source]) or 0
     graph_checks = [
         _check("Nodes materialised", nodes > 0, f"{nodes:,} nodes"),
-        _check("Edges materialised", edges > 0, f"{edges:,} edges"),
+        # No links is a fact about the data (a single table has none), not a
+        # fault; links that were found but produced nothing is a fault.
+        _check("Edges materialised", edges > 0 or not onto.relations,
+               f"{edges:,} edges" if edges or onto.relations
+               else "this source has no links between tables"),
         _check("No dangling edges", dangling == 0,
                f"{dangling:,} dangling edges"),
         _check("Readable entity keys", labelled > 0,
@@ -74,9 +78,19 @@ def certify_source(layer, source: str) -> dict:
     # --------------------------------------------------------- semantic
     definitions = metric_defs.list_definitions(graph, source)
     approved = [item for item in definitions if item.get("status") == "approved"]
+    drafts = [item for item in definitions if item.get("status") == "draft"]
+    if approved or not drafts:
+        approved_check = _check(
+            "Approved metric definitions", len(approved) > 0,
+            f"{len(approved)} approved of {len(definitions)} definitions")
+    else:
+        # Proposals waiting for a person are work in progress, not a fault.
+        approved_check = _check(
+            "Approved metric definitions", False,
+            f"{len(drafts)} proposed metric(s) waiting for approval in "
+            "3 Semantic", severity="warning")
     semantic_checks = [
-        _check("Approved metric definitions", len(approved) > 0,
-               f"{len(approved)} approved of {len(definitions)} definitions"),
+        approved_check,
         _check("Every metric has an owner", all(
             item.get("owner") for item in approved),
             "A metric without an owner cannot be governed", severity="warning"),

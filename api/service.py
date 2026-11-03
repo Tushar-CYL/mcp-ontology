@@ -12,15 +12,19 @@ that shows up as a contract:
 
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from context.assemble import build_context
-from knowledge_graph.build import build, is_current, table_ref
+from knowledge_graph.build import build, is_current, rejected_links, table_ref
 from knowledge_graph.resolve import candidates as identity_candidates
 from knowledge_graph.resolve import explain as explain_entity
 from knowledge_graph.resolve import resolve as resolve_links
 from knowledge_graph.store import open_graph
 from ontology.connect import connect
+from ontology.copies import hide_copies
 from ontology.discover import discover
 from semantic.compile import compile_metric
 from semantic.discover import discover_metrics
@@ -33,22 +37,48 @@ class SourceBundle:
     onto: object
 
 
+# Certification scans every node and edge (about two minutes on a 12M-edge
+# graph). Its result only changes when a source is rebuilt, so it is cached
+# per source and dropped whenever that source is (re)loaded.
+READINESS_MAX_AGE = 15 * 60
+
+
 class MiddleLayer:
     """A graph plus the sources it was built from. One object, no globals."""
 
     def __init__(self, graph_path: str | None = None):
         self.graph = open_graph(graph_path)
         self.bundles: list[SourceBundle] = []
+        self._readiness: dict[str, tuple[float, dict]] = {}
+        self._readiness_lock = threading.Lock()
+        self._clock = time.monotonic
 
     # ---------------------------------------------------------- sources
     def add_source(self, origin: str, source: str | None = None,
-                   rebuild: bool = False) -> dict:
-        """Connect a source and build it if the graph is not current."""
+                   rebuild: bool = False, progress=None) -> dict:
+        """Connect a source and build it if the graph is not current.
+
+        Copies (ML splits, exact duplicates) are kept out of the graph, and
+        guessed links the build found not to match the data are removed from
+        the ontology, now and on every later start.
+        """
+        say = progress or (lambda _line: None)
+        say("reading the source")
         schema = connect(origin)
+        hidden = hide_copies(schema)
+        if hidden:
+            say(f"kept {len(hidden)} copies out of the graph")
         onto = discover(schema)
         name = source or schema.name
+        say(f"found {len(onto.classes)} kinds of thing and "
+            f"{len(onto.relations)} candidate links")
         if rebuild or not is_current(self.graph, schema, onto, source=name):
-            build(self.graph, schema, onto, source=name)
+            build(self.graph, schema, onto, source=name, progress=say)
+        else:
+            say("graph already up to date")
+        rejected = rejected_links(self.graph, name)
+        for rel_name in rejected:
+            onto.relations.pop(rel_name, None)
         self._remember(SourceBundle(name, schema, onto))
         return {
             "source": name, "origin": schema.origin,
@@ -56,6 +86,8 @@ class MiddleLayer:
             "classes": len(onto.classes),
             "relations": len(onto.relations),
             "warnings": list(schema.warnings),
+            "rejected_links": rejected,
+            "hidden_copies": hidden,
             "nodes": self.graph.one(
                 "SELECT count(*) FROM nodes WHERE source_id = ?", [name]) or 0,
             "edges": self.graph.one(
@@ -65,6 +97,26 @@ class MiddleLayer:
     def _remember(self, bundle: SourceBundle) -> None:
         self.bundles = [b for b in self.bundles if b.source != bundle.source]
         self.bundles.append(bundle)
+        self._readiness.pop(bundle.source, None)
+
+    # -------------------------------------------------------- readiness
+    def readiness(self, source: str, refresh: bool = False,
+                  max_age: float = READINESS_MAX_AGE) -> dict:
+        """The certification report for a source, cached per source.
+
+        `cached` and `checked_at` say how old the answer is, so a caller
+        never mistakes a cached result for a fresh one.
+        """
+        from agent import certification
+        with self._readiness_lock:
+            hit = self._readiness.get(source)
+            if hit and not refresh and self._clock() - hit[0] <= max_age:
+                return {**hit[1], "cached": True}
+            report = certification.certify_source(self, source)
+            report = {**report, "checked_at": datetime.now(timezone.utc)
+                      .isoformat(timespec="seconds")}
+            self._readiness[source] = (self._clock(), report)
+            return {**report, "cached": False}
 
     def _bundle(self, source: str | None) -> SourceBundle:
         if source is None:

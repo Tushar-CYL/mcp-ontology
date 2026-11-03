@@ -74,8 +74,6 @@ def main(argv=None) -> int:
             agent = runtime.update_agent(existing["id"], payload)
         else:
             agent = runtime.create_agent(payload)
-        if agent["status"] != "published":
-            agent = runtime.publish_agent(agent["id"])
         print(json.dumps({"agent": {"id": agent["id"],
                                     "name": agent["name"],
                                     "status": agent["status"]}},

@@ -81,14 +81,17 @@ LAYER 4  CONTEXT          a small packed answer, every line labelled
 On screen:
 
 ```powershell
-python ui.py
+python run_server.py --port 8000
 ```
 
-then open <http://localhost:8501> — four tabs, one per layer. The Context tab
-shows what was kept, what was dropped, and how many items still need review.
-The Knowledge graph tab draws a named network: labels come from your data
-(`label`/`name`/`title`), node size is connectivity, solid edges are measured
-and dashed edges are derived, with force or circular layout.
+then open <http://127.0.0.1:8000>. The sidebar is grouped by team: **Govern**
+(ontology, knowledge graph, Context Factory, certification), **Analytics**
+(semantic metrics) and **Serve agents** (context packs, agent connections).
+
+To connect an external agent (Claude Desktop, Cursor, Copilot), open
+**Agent connections**, register the agent with a source and metrics, issue a
+key, and paste the generated configuration. The agent then calls
+`POST http://127.0.0.1:8000/mcp` with `Authorization: Bearer <key>`.
 
 What to look at:
 - classes and relations derived from the source (no configuration);
@@ -120,7 +123,7 @@ The graph file name is printed by `run.py`; it lives under `data\graphs\`.
 | `database is locked` | Close other terminals/notebooks using that DuckDB file |
 | A source is slow the first time | It is building the graph; later runs reopen it warm |
 | A cloud URL asks for a driver | `pip install snowflake-connector-python` or `databricks-sql-connector` |
-| UI shows a path under `D:\tushar\ontology` or `cannot import name 'table_ref'` | A stale Streamlit server from another checkout is still on port 8501. Run `python ui.py` **from this folder**; the new launcher kills the old server by port. If it persists, close the old terminal or run `taskkill /F /PID <pid>` from `netstat -ano \| findstr :8501`. |
+| UI shows old screens | Rebuild it: `cd frontend && npm run build`, then restart `run_server.py` |
 
 Deep docs: [SETUP.md](SETUP.md) · [docs/API.md](docs/API.md) ·
 [docs/benchmark/](docs/benchmark/README.md) · [STATUS.txt](STATUS.txt).

@@ -1,15 +1,14 @@
-"""The consumption surface: service methods, MCP JSON-RPC, local HTTP."""
+"""The consumption surface: service methods and MCP JSON-RPC.
+
+HTTP is covered by the FastAPI tests (test_mcp_http, test_platform_api)."""
 
 from __future__ import annotations
 
 import json
 import sqlite3
-import threading
-import urllib.request
 
 import pytest
 
-from api.http import make_server
 from api.mcp_server import TOOLS, handle
 from api.service import MiddleLayer
 
@@ -125,7 +124,7 @@ class TestMcp:
     def test_initialize_is_a_valid_mcp_response(self, layer):
         response = handle({"jsonrpc": "2.0", "id": 1,
                            "method": "initialize", "params": {}}, layer)
-        assert response["result"]["serverInfo"]["name"] == "middle-layer"
+        assert response["result"]["serverInfo"]["name"] == "strata"
         assert response["result"]["protocolVersion"]
 
     def test_tools_are_listed(self, layer):
@@ -133,15 +132,14 @@ class TestMcp:
                            "method": "tools/list"}, layer)
         names = {tool["name"] for tool in response["result"]["tools"]}
         assert names == {tool["name"] for tool in TOOLS}
-        assert "context.build" in names
+        assert "get_context" in names
 
     def test_a_tool_call_returns_text_content(self, layer):
         response = handle({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-            "params": {"name": "context.build",
-                       "arguments": {"entity": {"class": "Customer",
-                                                "key": "1",
-                                                "source": "shop"}}}}, layer)
+            "params": {"name": "get_entity_context",
+                       "arguments": {"class": "Customer", "key": "1",
+                                     "source": "shop"}}}, layer)
         content = response["result"]["content"][0]
         assert content["type"] == "text"
         payload = json.loads(content["text"])
@@ -162,54 +160,3 @@ class TestMcp:
     def test_a_notification_gets_no_response(self, layer):
         assert handle({"jsonrpc": "2.0",
                        "method": "notifications/initialized"}, layer) is None
-
-
-class TestHttp:
-    @pytest.fixture
-    def server(self, layer):
-        httpd = make_server(layer, "127.0.0.1", 0)
-        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-        thread.start()
-        host, port = httpd.server_address[:2]
-        yield f"http://{host}:{port}"
-        httpd.shutdown()
-        httpd.server_close()
-        thread.join(timeout=5)
-
-    def _get(self, url):
-        with urllib.request.urlopen(url, timeout=10) as response:
-            return response.status, json.loads(response.read())
-
-    def _post(self, url, payload):
-        request = urllib.request.Request(
-            url, data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(request, timeout=10) as response:
-            return response.status, json.loads(response.read())
-
-    def test_health(self, server):
-        status, body = self._get(f"{server}/health")
-        assert status == 200 and body["status"] == "ok"
-        assert body["sources"] == ["shop"]
-
-    def test_ontology(self, server):
-        status, body = self._get(f"{server}/ontology")
-        assert status == 200
-        assert {c["name"] for c in body["classes"]} >= {"Customer", "Order"}
-
-    def test_metric(self, server):
-        status, body = self._get(f"{server}/metric?name=total_sum")
-        assert status == 200 and body["rows"][0][0] == 30.0
-
-    def test_context_post(self, server):
-        status, body = self._post(
-            f"{server}/context",
-            {"entity": {"class": "Customer", "key": "1", "source": "shop"}})
-        assert status == 200
-        assert body["facts"] and body["focus"]["class"] == "Customer"
-        assert body["chars"] <= body["budget_chars"]
-
-    def test_unknown_route_is_404(self, server):
-        with pytest.raises(urllib.error.HTTPError) as exc:
-            self._get(f"{server}/nope")
-        assert exc.value.code == 404
