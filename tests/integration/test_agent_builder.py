@@ -1,4 +1,4 @@
-"""Agent builder: custom skills, AI guardrail suggestions, certification, evidence."""
+"""Agent configuration: AI guardrail suggestions, certification, evidence."""
 
 from __future__ import annotations
 
@@ -44,30 +44,7 @@ def client(tmp_path, monkeypatch):
         yield test_client
 
 
-def test_custom_skill_then_agent_with_evidence_and_certification(client):
-    skills = client.get("/api/skills", params={"source": "revenue"})
-    assert skills.status_code == 200
-    assert {item["id"] for item in skills.json()["skills"]} >= {
-        "explain_metric", "compare_periods", "breakdown_by",
-        "graph_context", "evidence_search"}
-
-    created_skill = client.post("/api/skills", json={
-        "name": "West focus", "description": "Focus on the West region.",
-        "source_id": "revenue", "kind": "breakdown", "metric": "revenue",
-        "dimension": "segment",
-    })
-    assert created_skill.status_code == 200, created_skill.text
-    skill_id = created_skill.json()["id"]
-    assert skill_id.startswith("skill_")
-
-    suggested = client.post("/api/agents/suggest-guardrails", json={
-        "problem_statement": "Why did revenue fall, and can I trust it?",
-        "source_id": "revenue", "metrics": ["revenue"],
-    })
-    assert suggested.status_code == 200
-    assert suggested.json()["guardrails"]
-    assert suggested.json()["configured"] is False
-
+def test_agent_with_evidence_and_certification(client):
     created = client.post("/api/agents", json={
         "name": "Revenue Analyst",
         "purpose": "Explain revenue.",
@@ -76,17 +53,13 @@ def test_custom_skill_then_agent_with_evidence_and_certification(client):
         "sources": ["revenue"],
         "metrics": ["revenue"],
         "skills": ["explain_metric", "compare_periods", "breakdown_by",
-                   "graph_context", "evidence_search", skill_id],
+                   "graph_context", "evidence_search"],
         "guardrails": ["Never state a number that is not in the evidence."],
     })
     assert created.status_code == 200, created.text
     agent = created.json()
     assert agent["problem_statement"] == "Why did West revenue fall, and can I trust it?"
     assert agent["metrics"] == ["revenue"]
-    assert skill_id in agent["skills"]
-
-    published = client.post(f"/api/agents/{agent['id']}/publish")
-    assert published.status_code == 200
 
     preview = client.post(f"/api/agents/{agent['id']}/preview", json={
         "question": "Why did West revenue fall in October 2026, and can I trust it?",
@@ -112,23 +85,3 @@ def test_custom_skill_then_agent_with_evidence_and_certification(client):
     assert data["status"] in ("pass", "warn")
 
 
-def test_source_guardrails_persist_and_are_inherited(client):
-    saved = client.put("/api/sources/revenue/guardrails", json={
-        "rules": ["Never expose customer contact details."],
-    })
-    assert saved.status_code == 200, saved.text
-    rules = saved.json()["rules"]
-    assert any("contact details" in rule["instruction"] for rule in rules)
-    fetched = client.get("/api/sources/revenue/guardrails")
-    assert fetched.status_code == 200
-    assert any("contact details" in rule["instruction"]
-               for rule in fetched.json()["rules"])
-
-
-def test_custom_skill_rejects_an_unapproved_metric(client):
-    response = client.post("/api/skills", json={
-        "name": "Profit focus", "source_id": "revenue", "kind": "metric_focus",
-        "metric": "profit",
-    })
-    assert response.status_code == 400
-    assert "approved" in response.text

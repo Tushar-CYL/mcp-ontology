@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { LAYER_FLOW } from '../utils/governance'
 import {
   ArrowRight,
   Database,
@@ -30,28 +31,28 @@ const LAYER_CARDS = [
     key: 'ontology',
     index: '1',
     title: 'Ontology',
-    question: 'What exists, and what does it mean?',
+    question: 'The catalogue: what kinds of thing exist and how they link.',
     icon: Layers,
   },
   {
     key: 'graph',
     index: '2',
     title: 'Knowledge graph',
-    question: 'How are the entities connected?',
+    question: 'The connected map: your real records and their links.',
     icon: Network,
   },
   {
     key: 'semantic',
     index: '3',
     title: 'Semantic layer',
-    question: 'What does each metric mean?',
+    question: 'The rulebook: approved numbers everyone agrees on.',
     icon: FileCheck2,
   },
   {
     key: 'context',
     index: '4',
     title: 'Context',
-    question: 'Which evidence answers the question?',
+    question: 'The briefing folder: the few cited facts for one question.',
     icon: ShieldCheck,
   },
 ] as const
@@ -65,6 +66,7 @@ export function Onboarding() {
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<unknown>(null)
   const [elapsed, setElapsed] = useState(0)
+  const [steps, setSteps] = useState<Array<{ t: number; text: string }>>([])
   const timer = useRef<number | null>(null)
 
   useEffect(() => {
@@ -92,11 +94,25 @@ export function Onboarding() {
     }
     setBusy(true)
     setFormError(null)
+    setSteps([])
     try {
-      const created = await api.createSource({
+      // Load in the background and poll: a big source never ties up one
+      // request for minutes, and the rest of the app keeps answering.
+      const { job_id: jobId } = await api.startSourceLoad({
         path: trimmed,
         name: name.trim() || undefined,
       })
+      let job = await api.job(jobId)
+      while (job.status === 'running') {
+        setSteps(job.steps)
+        await new Promise((resolve) => window.setTimeout(resolve, 1000))
+        job = await api.job(jobId)
+      }
+      setSteps(job.steps)
+      if (job.status === 'failed' || !job.result) {
+        throw new Error(job.error ?? 'The load failed.')
+      }
+      const created = job.result
       await refresh()
       selectSource(created.id)
       toast.push({
@@ -128,16 +144,31 @@ export function Onboarding() {
       <PageHeader
         eyebrow="Start here"
         title="Make every data source usable for trusted decisions"
-        description="Connect one source. The middle layer derives the ontology, builds the graph, defines the metrics and packs cited evidence for an agent. Nothing is invented along the way."
-        actions={
-          selectedSource ? (
-            <Link to="/layers" className="btn btn--primary btn--md">
-              Continue to layers
-              <ArrowRight size={15} aria-hidden="true" />
-            </Link>
-          ) : null
-        }
+        description="Connect one source. Strata turns it into four layers (a catalogue, a connected map, a rulebook of approved numbers and a cited briefing folder) and gives you agents that use all four and say when they cannot answer."
       />
+
+      {selectedSource ? (
+        <nav className="flow-strip" aria-label="How Strata works">
+          {LAYER_FLOW.map((step, index) => {
+            const count =
+              step.layer === 'ontology' ? `${selectedSource.classes} kinds of thing`
+                : step.layer === 'graph' ? `${selectedSource.nodes.toLocaleString()} records`
+                  : step.layer === 'semantic' ? 'approved metrics'
+                    : step.layer === 'context' ? 'cited evidence'
+                      : index === 0 ? (selectedSource.name || selectedSource.id)
+                        : '6 agent types'
+            return (
+              <Link key={step.to} to={step.to} className="flow-step">
+                <span className="flow-step__label">{step.label}</span>
+                <span className="flow-step__count">{count}</span>
+                {index < LAYER_FLOW.length - 1 ? (
+                  <ArrowRight size={14} aria-hidden="true" className="flow-step__arrow" />
+                ) : null}
+              </Link>
+            )
+          })}
+        </nav>
+      ) : null}
 
       {loading && sources.length === 0 ? <LoadingState label="Loading sources" /> : null}
       {error ? <ErrorState error={error} onRetry={() => void refresh()} /> : null}
@@ -168,9 +199,17 @@ export function Onboarding() {
           </div>
           {busy ? (
             <Callout tone="info" title="Building the four layers">
-              Reading and profiling the source, then building nodes and edges. Large sources can take
-              minutes. Elapsed: <strong>{formatDuration(elapsed)}</strong>. This page stays open; do not
-              start a second build.
+              Elapsed: <strong>{formatDuration(elapsed)}</strong>. The rest of Strata keeps working while
+              this runs.
+              {steps.length ? (
+                <ol className="load-steps">
+                  {steps.slice(-8).map((step) => (
+                    <li key={`${step.t}-${step.text}`}>
+                      <span className="muted">{step.t.toFixed(0)}s</span> {step.text}
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
             </Callout>
           ) : null}
           {formError ? <ErrorState error={formError} compact /> : null}
@@ -190,8 +229,8 @@ export function Onboarding() {
         </Card>
 
         <Card
-          title="What this platform gives you"
-          subtitle="Four explainable layers under one governed model."
+          title="The four layers"
+          subtitle="Each one answers a different question. Agents use all four."
           className="panel-stack"
         >
           <div className="definition-grid">
@@ -210,8 +249,8 @@ export function Onboarding() {
             })}
           </div>
           <Callout tone="success" title="The promise">
-            Connect data once. Define meaning once. Reuse it everywhere — BI first, AI-ready by
-            design.
+            Every agent answer says which layers it used, and says plainly when the evidence is
+            not enough instead of guessing.
           </Callout>
         </Card>
       </div>

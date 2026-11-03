@@ -67,8 +67,7 @@ logger = logging.getLogger("middle_layer.agent.runtime")
 SKILLS = ("explain_metric", "compare_periods", "breakdown_by",
           "graph_context", "evidence_search")
 
-# Agent config fields that can be patched. `status` is not one of them:
-# publish_agent owns that transition.
+# Agent config fields that can be patched. `status` is not one of them.
 _EDITABLE = ("name", "purpose", "problem_statement", "instructions",
              "metrics", "skills", "guardrails")
 
@@ -158,6 +157,11 @@ class AgentRuntime:
         self.graph = graph
         self.bundles = _normalise_bundles(bundles)
         self.llm = llm if llm is not None else EYQClient()
+        # Added with agent presets; older graphs gain the column on open.
+        with self.graph.lock:
+            self.graph.con.execute(
+                "ALTER TABLE agents ADD COLUMN IF NOT EXISTS preset VARCHAR"
+                " DEFAULT 'insight'")
 
     @classmethod
     def from_service(cls, service, llm: EYQClient | None = None) -> "AgentRuntime":
@@ -201,6 +205,8 @@ class AgentRuntime:
         purpose = str(payload.get("purpose") or "").strip()[:2000]
         problem_statement = str(payload.get("problem_statement") or "").strip()[:4000]
         instructions = str(payload.get("instructions") or "").strip()[:4000]
+        from agent.presets import get_preset
+        preset = get_preset(payload.get("preset"))["id"]
         agent_id = self._agent_id(source, name)
         if self._select_agent(agent_id) is not None:
             raise ValueError(
@@ -212,18 +218,18 @@ class AgentRuntime:
             self.graph.con.execute(
                 "INSERT INTO agents(id, name, purpose, problem_statement,"
                 " instructions, source_id, metrics, skills, guardrails,"
-                " status, created_at, updated_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,'draft',?,?)",
+                " status, created_at, updated_at, preset)"
+                " VALUES (?,?,?,?,?,?,?,?,?,'draft',?,?,?)",
                 [agent_id, name, purpose, problem_statement, instructions,
                  source, _dumps(metrics), _dumps(skills),
-                 _dumps(guardrails), now, now])
+                 _dumps(guardrails), now, now, preset])
         return self.get_agent(agent_id)
 
     def list_agents(self) -> list[dict]:
         rows = self.graph.sql(
             "SELECT id, name, purpose, problem_statement, instructions,"
             " source_id, metrics, skills, guardrails, status, created_at,"
-            " updated_at FROM agents ORDER BY created_at DESC, name")
+            " updated_at, preset FROM agents ORDER BY created_at DESC, name")
         return [self._row_to_agent(row) for row in rows]
 
     def get_agent(self, agent_id: str) -> dict:
@@ -231,6 +237,15 @@ class AgentRuntime:
         if row is None:
             raise KeyError(f"no agent {agent_id!r}")
         return self._row_to_agent(row)
+
+    def delete_agent(self, agent_id: str) -> None:
+        """Remove an agent and its run history. Raises KeyError if unknown."""
+        agent = self.get_agent(agent_id)
+        with self.graph.lock:
+            self.graph.con.execute(
+                "DELETE FROM agent_runs WHERE agent_id = ?", [agent["id"]])
+            self.graph.con.execute(
+                "DELETE FROM agents WHERE id = ?", [agent["id"]])
 
     def update_agent(self, agent_id: str, payload: dict) -> dict:
         """Patch an existing agent. Source scope is immutable after creation."""
@@ -357,23 +372,6 @@ class AgentRuntime:
             out.append(item)
         return out[:6]
 
-    def publish_agent(self, agent_id: str) -> dict:
-        """Promote a draft to published. The three required fields are enforced."""
-        agent = self.get_agent(agent_id)
-        missing = [field for field in ("name", "instructions", "source_id")
-                   if not str(agent.get(field) or "").strip()]
-        if missing:
-            raise ValueError(
-                "cannot publish: " + ", ".join(missing) + " must be set")
-        if agent["source_id"] not in self._known_sources():
-            raise ValueError(
-                f"cannot publish: source {agent['source_id']!r} is not loaded")
-        with self.graph.lock:
-            self.graph.con.execute(
-                "UPDATE agents SET status = 'published', updated_at = ?"
-                " WHERE id = ?", [_now(), agent["id"]])
-        return self.get_agent(agent["id"])
-
     def _agent_id(self, source: str, name: str) -> str:
         return hashlib.sha1(f"{source}|{name}".encode("utf-8")).hexdigest()[:16]
 
@@ -381,13 +379,14 @@ class AgentRuntime:
         rows = self.graph.sql(
             "SELECT id, name, purpose, problem_statement, instructions,"
             " source_id, metrics, skills, guardrails, status, created_at,"
-            " updated_at FROM agents WHERE id = ?", [agent_id])
+            " updated_at, preset FROM agents WHERE id = ?", [agent_id])
         return rows[0] if rows else None
 
     def _row_to_agent(self, row) -> dict:
         columns = ("id", "name", "purpose", "problem_statement",
                    "instructions", "source_id", "metrics", "skills",
-                   "guardrails", "status", "created_at", "updated_at")
+                   "guardrails", "status", "created_at", "updated_at",
+                   "preset")
         agent = dict(zip(columns, row))
         agent["metrics"] = _loads(agent.get("metrics"), [])
         agent["skills"] = _loads(agent.get("skills"), [])
@@ -396,6 +395,7 @@ class AgentRuntime:
         agent["created_at"] = jsonable(agent.get("created_at"))
         agent["updated_at"] = jsonable(agent.get("updated_at"))
         agent["status"] = agent.get("status") or "draft"
+        agent["preset"] = agent.get("preset") or "insight"
         # Aliases the UI reads without breaking the canonical field.
         agent["source"] = agent["source_id"]
         agent["sources"] = [agent["source_id"]] if agent["source_id"] else []
@@ -816,7 +816,7 @@ class AgentRuntime:
     def _messages(self, agent: dict, question: str, evidence: dict) -> list[dict]:
         instructions = guardrail_instructions(agent)
         system = "\n".join([
-            f"You are the published agent {agent.get('name')!r} of the Middle "
+            f"You are the agent {agent.get('name')!r} connected to Strata, the "
             "Layer. You write the narrative for a governed analytics answer.",
             f"Purpose: {agent.get('purpose') or 'answer business questions '
             'from approved metrics and cited evidence'}",

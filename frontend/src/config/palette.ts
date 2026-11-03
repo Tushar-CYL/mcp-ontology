@@ -4,16 +4,16 @@
  * palette so the two views of the same data agree.
  */
 export const CHART_PALETTE = [
-  '#2272b4',
-  '#067647',
-  '#ff3621',
-  '#7a5af8',
-  '#0e7090',
-  '#b54708',
-  '#4e5ba6',
-  '#d92d20',
-  '#099250',
-  '#6172f3',
+  '#188ce5', // EY blue
+  '#2db757', // EY green
+  '#ff6d00', // EY orange
+  '#724bc3', // EY purple
+  '#27acaa', // EY teal
+  '#ff4136', // EY red
+  '#750e5c', // EY maroon
+  '#3d108a', // EY deep purple
+  '#168736', // EY deep green
+  '#747480', // EY grey
 ] as const
 
 export function colorFor(index: number): string {

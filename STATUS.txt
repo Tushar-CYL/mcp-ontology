@@ -1,6 +1,6 @@
 ================================================================================
 
-                        T H E   M I D D L E   L A Y E R
+                                 S T R A T A
 
                    what it is · what is done · how to run it
 
@@ -202,11 +202,11 @@
 
       python run.py                                  see it in the terminal
 
-      python ui.py                                   see it on a screen
+      python run_server.py --port 8000               see it on a screen
 
 
-  That is everything. No virtual environment needed, no `py` launcher, no
-  `streamlit` command - every one of those is a thing that can be missing
+  That is everything. No virtual environment needed, no `py` launcher -
+  every one of those is a thing that can be missing
   on a locked-down machine, and each one has already cost an afternoon.
 
   If `python` is not recognised, Python is not on your PATH. Reinstall it
@@ -223,20 +223,18 @@
   With no argument, run.py builds a small example shop and uses that, so a
   fresh copy always has something to show.
 
-  In the UI, type the path into the box on the left instead.
+  In the UI, use Data sources and type the path there instead.
 
 
   SEEING THE SCREEN
 
-      python ui.py
+      python run_server.py --port 8000
 
-  then open   http://localhost:8501   in your browser.
+  then open   http://127.0.0.1:8000   in your browser.
   Press Ctrl+C in the terminal to stop it.
 
-  ui.py stops any copy already running first. That matters: Streamlit
-  re-runs app.py on every click but does NOT reload the code underneath,
-  so an old copy keeps serving old code and reports errors for things that
-  are perfectly fine.
+  External agents connect to the same server at  POST /mcp  with a key
+  issued on the Agent connections page.
 
 
   CHECKING IT ALL WORKS  (optional, ~40 seconds)
@@ -311,12 +309,10 @@
       Run:  python -m pip install -r requirements.txt
 
   An import error naming something that clearly exists
-      An old copy of the app is still running. Use python ui.py, which
-      stops it first.
+      An old copy of the server is still running. Stop it and start again.
 
-  "Port 8501 is already in use"
-      Another Streamlit app is running. python ui.py stops old copies it
-      finds; if it still fails, close the other terminal.
+  "Port 8000 is already in use"
+      Another server is running. Stop it, or pass --port 8001.
 
   "No Python 3.10 or newer found"
       Install from python.org and tick "Add python.exe to PATH". Close

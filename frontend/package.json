@@ -1,9 +1,9 @@
 {
-  "name": "middle-layer-ui",
+  "name": "strata-ui",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "The Middle Layer - evidence-first data platform UI",
+  "description": "Strata - trusted context for every agent",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

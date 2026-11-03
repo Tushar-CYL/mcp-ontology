@@ -160,6 +160,10 @@ CREATE TABLE IF NOT EXISTS metric_definitions (
     value_expr  VARCHAR NOT NULL,
     time_column VARCHAR,
     dimensions  JSON,
+    format      VARCHAR,
+    precision   INTEGER DEFAULT 2,
+    higher_is_better BOOLEAN DEFAULT TRUE,
+    caveats     VARCHAR,
     owner       VARCHAR,
     status      VARCHAR NOT NULL DEFAULT 'approved',
     version     INTEGER NOT NULL DEFAULT 1,
@@ -206,6 +210,51 @@ CREATE TABLE IF NOT EXISTS source_guardrails (
     updated_at TIMESTAMP
 );
 
+-- Enterprise Context Factory: governed context assets and their versions.
+-- A term, metric, relationship, policy, hierarchy or document proposal is an
+-- asset with an owner, status and version.
+CREATE TABLE IF NOT EXISTS context_assets (
+    id          VARCHAR PRIMARY KEY,
+    kind        VARCHAR NOT NULL,
+    name        VARCHAR NOT NULL,
+    description VARCHAR,
+    source_id   VARCHAR,
+    owner       VARCHAR,
+    status      VARCHAR NOT NULL DEFAULT 'draft',
+    version     INTEGER NOT NULL DEFAULT 1,
+    data        JSON,
+    created_at  TIMESTAMP,
+    updated_at  TIMESTAMP,
+    UNIQUE (source_id, kind, name)
+);
+
+CREATE TABLE IF NOT EXISTS asset_versions (
+    asset_id    VARCHAR NOT NULL,
+    version     INTEGER NOT NULL,
+    snapshot    JSON,
+    status      VARCHAR,
+    created_at  TIMESTAMP,
+    PRIMARY KEY (asset_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS factory_documents (
+    id           VARCHAR PRIMARY KEY,
+    name         VARCHAR NOT NULL,
+    path         VARCHAR,
+    content_hash VARCHAR,
+    status       VARCHAR NOT NULL DEFAULT 'new',
+    extracted    JSON,
+    created_at   TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS context_consumers (
+    id          VARCHAR PRIMARY KEY,
+    name        VARCHAR NOT NULL,
+    kind        VARCHAR NOT NULL,
+    config      JSON,
+    created_at  TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS agent_runs (
     id          VARCHAR PRIMARY KEY,
     agent_id    VARCHAR NOT NULL,
@@ -239,6 +288,21 @@ class Graph:
     visible because the point of this layer is that you can read what it did.
     """
 
+    def writer(self) -> "Graph":
+        """A second connection to the same database, for long writes.
+
+        A build used to run on the shared connection under the shared lock,
+        so every request (even the health check) waited for minutes and the
+        UI reported "API unreachable". On its own cursor, inside one
+        transaction, the build no longer blocks readers, who keep seeing the
+        previous data until it commits.
+        """
+        other = Graph.__new__(Graph)
+        other.con = self.con.cursor()
+        other.lock = threading.RLock()
+        other.rebuilt = False
+        return other
+
     def __init__(self, con) -> None:
         self.con = con
         # DuckDB refuses concurrent calls on one connection instead of
@@ -255,6 +319,10 @@ class Graph:
         for table, column, ddl in (
             ("agents", "problem_statement", "VARCHAR"),
             ("agents", "skills", "JSON"),
+            ("metric_definitions", "format", "VARCHAR"),
+            ("metric_definitions", "precision", "INTEGER DEFAULT 2"),
+            ("metric_definitions", "higher_is_better", "BOOLEAN DEFAULT TRUE"),
+            ("metric_definitions", "caveats", "VARCHAR"),
         ):
             try:
                 self.con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
@@ -411,6 +479,27 @@ class Graph:
             "SELECT count(*) FROM edges WHERE source_id = ? AND rel = ?",
             [source, code]) or 0
 
+    def search_keys(self, cls: str, query: str = "", limit: int = 50,
+                    source: str | None = None) -> tuple[list[str], int]:
+        """Keys of one kind matching a search, plus how many exist in total.
+
+        The search text is a bound parameter (never SQL). LIMIT is in SQL so a
+        kind with millions of records still answers immediately.
+        """
+        source = self.resolve_source(source)
+        code = self.class_code(cls, source)
+        if code is None:
+            raise KeyError(f"no kind {cls!r} in source {source!r}")
+        total = int(self.one("SELECT count(*) FROM nodes WHERE source_id = ?"
+                             " AND class = ?", [source, code]) or 0)
+        sql = "SELECT nkey FROM nodes WHERE source_id = ? AND class = ?"
+        args: list = [source, code]
+        if query:
+            sql += " AND contains(lower(nkey), lower(?))"
+            args.append(query)
+        sql += f" ORDER BY nkey LIMIT {max(1, min(int(limit), 100))}"
+        return [r[0] for r in self.sql(sql, args)], total
+
     def keys_of(self, cls: str, limit: int | None = None,
                 source: str | None = None) -> set[str]:
         """Keys of one kind. LIMIT in SQL, not a slice in Python: a caller
@@ -488,6 +577,38 @@ class Graph:
             JOIN nodes n ON n.id = e.dst
             WHERE e.src = ? AND e.rel = ?""", [node, rel_code])
         return {k: t for k, t in rows}
+
+    def inbound(self, cls: str, key: str, rel: str,
+                source: str | None = None,
+                limit: int | None = None) -> dict:
+        """Keys of the nodes that link TO this one along `rel`.
+
+        `neighbours` follows edges out of a node (Order -> Customer). Asking
+        about a customer needs the reverse: which orders point at it. LIMIT is
+        in SQL so a super-node (a country with a million orders) stays cheap.
+        """
+        source = self.resolve_source(source)
+        rel_code = self.relation_code(rel, source)
+        node = self.node_id(cls, key, source)
+        if rel_code is None or node is None:
+            return {}
+        sql = """
+            SELECT n.nkey, e.valid_from FROM edges e
+            JOIN nodes n ON n.id = e.src
+            WHERE e.dst = ? AND e.rel = ? ORDER BY n.nkey"""
+        if limit:
+            sql += f" LIMIT {int(limit)}"
+        return {k: t for k, t in self.sql(sql, [node, rel_code])}
+
+    def inbound_count(self, cls: str, key: str, rel: str,
+                      source: str | None = None) -> int:
+        source = self.resolve_source(source)
+        rel_code = self.relation_code(rel, source)
+        node = self.node_id(cls, key, source)
+        if rel_code is None or node is None:
+            return 0
+        return int(self.one("SELECT count(*) FROM edges WHERE dst = ? AND rel = ?",
+                            [node, rel_code]) or 0)
 
     # -------------------------------------------------------- traversal
     def reach(self, cls: str, key: str, rel: str | None,

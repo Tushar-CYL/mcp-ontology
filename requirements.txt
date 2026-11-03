@@ -12,7 +12,7 @@
 # way to re-measure on a new machine is `python benchmark.py` (see SETUP.md);
 # the old verify.py it replaced belonged to an earlier generation and is gone.
 #
-# Built and tested on Python 3.14.7 with duckdb 2.0.0, streamlit 1.66.1 and
+# Built and tested on Python 3.14.7 with duckdb 2.0.0 and
 # pytest 9.2.0.
 #
 # Licences are listed because this ships to clients. No GPL/AGPL.
@@ -21,8 +21,7 @@
 duckdb>=1.4,<3             # MIT    - embedded engine, no server to install
 PyYAML>=6.0,<7             # MIT    - run.py's startup guard checks it; no YAML
                            #          file is read by the current code yet
-streamlit>=1.66,<2         # Apache - the UI: ui.py and app.py (on 1.66.1)
-pytest>=8.0,<10            # MIT    - the tests, incl. streamlit.testing (on 9.2.0)
+pytest>=8.0,<10            # MIT    - the tests (on 9.2.0)
 
 # ---- optional: extra formats and cloud connectors --------------------------
 # Not installed by default; the code prints the install command when a matching

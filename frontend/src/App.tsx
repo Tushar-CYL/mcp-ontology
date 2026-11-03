@@ -3,13 +3,10 @@ import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { SourceProvider } from './context/SourceProvider'
 import { ToastProvider } from './context/ToastProvider'
 import { AppShell } from './layout/AppShell'
-import { AgentStudio } from './pages/AgentStudio'
-import { Certification } from './pages/Certification'
+import { Agents } from './pages/Agents'
 import { LayersLayout } from './pages/LayersLayout'
 import { NotFound } from './pages/NotFound'
 import { Onboarding } from './pages/Onboarding'
-import { PublishedAgent } from './pages/PublishedAgent'
-import { Solutions } from './pages/Solutions'
 import { ContextPanel } from './pages/layers/ContextPanel'
 import { GraphPanel } from './pages/layers/GraphPanel'
 import { OntologyPanel } from './pages/layers/OntologyPanel'
@@ -32,11 +29,14 @@ export default function App() {
                   <Route path="semantic" element={<SemanticPanel />} />
                   <Route path="context" element={<ContextPanel />} />
                 </Route>
-                <Route path="certification" element={<Certification />} />
-                <Route path="solutions" element={<Solutions />} />
-                <Route path="studio" element={<AgentStudio />} />
-                <Route path="agent" element={<PublishedAgent />} />
-                <Route path="agent/:agentId" element={<PublishedAgent />} />
+                <Route path="agents" element={<Agents />} />
+                <Route path="connections" element={<Navigate to="/agents" replace />} />
+                <Route path="factory" element={<Navigate to="/layers/context" replace />} />
+                <Route path="glossary" element={<Navigate to="/layers/semantic" replace />} />
+                <Route path="certification" element={<Navigate to="/layers/ontology" replace />} />
+                {/* Old links: the agent builder became agent connections. */}
+                <Route path="studio" element={<Navigate to="/agents" replace />} />
+                <Route path="agent/*" element={<Navigate to="/agents" replace />} />
                 <Route path="*" element={<NotFound />} />
               </Route>
             </Routes>

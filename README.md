@@ -21,8 +21,8 @@ One file with everything you need: **[START_HERE.md](START_HERE.md)**
 python -m pip install -r requirements.txt
 python run.py                         # built-in example
 python run.py "C:\data\your.db"       # or a folder, a file, a URL
-python ui.py                          # four tabs on localhost:8501
-python -m pytest -q                   # 281 tests
+python run_server.py --port 8000      # Strata UI + API + MCP on http://127.0.0.1:8000
+python -m pytest -q                   # the test suite
 ```
 
 ## The four layers

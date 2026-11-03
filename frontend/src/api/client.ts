@@ -1,14 +1,21 @@
 import type {
   Agent,
+  AgentConnection,
+  AgentPreset,
+  ContextSuggestions,
+  LoadJob,
+  MetricInsightsResponse,
+  MetricSummary,
   AgentDraft,
+  AgentKeysResponse,
+  AgentUsageResponse,
+  FeedbackItem,
+  FeedbackSubmit,
+  MetricUsage,
+  ValidationResult,
   AgentsResponse,
   AskResponse,
   CertificationResponse,
-  CreateSkillRequest,
-  GuardrailSuggestResponse,
-  SourceGuardrailsResponse,
-  SkillDefinition,
-  SkillsResponse,
   ContextQuery,
   ContextResponse,
   CreateSourceRequest,
@@ -17,13 +24,13 @@ import type {
   EvaluateMetricResponse,
   GraphResponse,
   HealthResponse,
+  MetricHealthResponse,
   MetricsResponse,
   OntologyResponse,
   PreviewResponse,
-  PublishResponse,
+  IssuedKey,
   RunResponse,
   SourcesResponse,
-  ToolsResponse,
 } from './types'
 
 /**
@@ -331,56 +338,25 @@ export const api = {
       timeoutMs: 90_000,
     }),
 
+  metricHealth: (name: string, source: string, signal?: AbortSignal) =>
+    request<MetricHealthResponse>(
+      `/metrics/${encodeURIComponent(name)}/health${queryString({ source })}`,
+      { signal, timeoutMs: 60_000 },
+    ),
+
   context: (query: ContextQuery, signal?: AbortSignal) =>
     request<ContextResponse>(`/context${queryString({ ...query })}`, {
       signal,
       timeoutMs: 30_000,
     }),
 
-  tools: (signal?: AbortSignal) =>
-    request<ToolsResponse>('/tools', { signal, timeoutMs: 15_000 }),
-
-  skills: (source: string, signal?: AbortSignal) =>
-    request<SkillsResponse>(`/skills${queryString({ source })}`, { signal }),
-
-  createSkill: (payload: CreateSkillRequest, signal?: AbortSignal) =>
-    request<SkillDefinition>('/skills', {
-      method: 'POST', body: payload, signal, timeoutMs: 30_000,
-    }),
-
-  deleteSkill: (id: string, signal?: AbortSignal) =>
-    request<{ deleted: string }>(`/skills/${encodeURIComponent(id)}`, {
-      method: 'DELETE', signal, timeoutMs: 15_000,
-    }),
-
-  sourceGuardrails: (source: string, signal?: AbortSignal) =>
-    request<SourceGuardrailsResponse>(
-      `/sources/${encodeURIComponent(source)}/guardrails`,
-      { signal, timeoutMs: 15_000 },
+  /** Cached per source on the server; `refresh` re-runs every check, which
+   * scans the whole graph and can take minutes on large sources. */
+  certification: (source: string, signal?: AbortSignal, refresh = false) =>
+    request<CertificationResponse>(
+      `/certification${queryString({ source, refresh: refresh ? 'true' : undefined })}`,
+      { signal, timeoutMs: 300_000 },
     ),
-
-  saveSourceGuardrails: (
-    source: string,
-    rules: Array<string | { instruction: string; label?: string }>,
-    signal?: AbortSignal,
-  ) =>
-    request<SourceGuardrailsResponse>(
-      `/sources/${encodeURIComponent(source)}/guardrails`,
-      { method: 'PUT', body: { rules }, signal, timeoutMs: 30_000 },
-    ),
-
-  certification: (source: string, signal?: AbortSignal) =>
-    request<CertificationResponse>(`/certification${queryString({ source })}`, {
-      signal, timeoutMs: 45_000,
-    }),
-
-  suggestGuardrails: (
-    payload: { problem_statement: string; source_id?: string; metrics?: string[] },
-    signal?: AbortSignal,
-  ) =>
-    request<GuardrailSuggestResponse>('/agents/suggest-guardrails', {
-      method: 'POST', body: payload, signal, timeoutMs: 90_000,
-    }),
 
   agents: (signal?: AbortSignal) =>
     request<AgentsResponse>('/agents', { signal, timeoutMs: 15_000 }),
@@ -404,14 +380,6 @@ export const api = {
       timeoutMs: 180_000,
     }),
 
-  publishAgent: (id: string, signal?: AbortSignal) =>
-    request<PublishResponse>(`/agents/${encodeURIComponent(id)}/publish`, {
-      method: 'POST',
-      body: {},
-      signal,
-      timeoutMs: 45_000,
-    }),
-
   askAgent: (id: string, question: string, signal?: AbortSignal) =>
     request<AskResponse>(`/agents/${encodeURIComponent(id)}/ask`, {
       method: 'POST',
@@ -419,6 +387,121 @@ export const api = {
       signal,
       timeoutMs: 180_000,
     }),
+
+  deleteAgent: (id: string, signal?: AbortSignal) =>
+    request<{ deleted: string }>(`/agents/${encodeURIComponent(id)}`, {
+      method: 'DELETE', signal, timeoutMs: 15_000,
+    }),
+
+  agentKeys: (id: string, signal?: AbortSignal) =>
+    request<AgentKeysResponse>(`/agents/${encodeURIComponent(id)}/keys`, {
+      signal, timeoutMs: 15_000,
+    }),
+
+  issueAgentKey: (id: string, label: string, signal?: AbortSignal) =>
+    request<IssuedKey>(`/agents/${encodeURIComponent(id)}/keys`, {
+      method: 'POST', body: { label }, signal, timeoutMs: 15_000,
+    }),
+
+  revokeAgentKey: (id: string, keyId: string, signal?: AbortSignal) =>
+    request<{ revoked: string }>(
+      `/agents/${encodeURIComponent(id)}/keys/${encodeURIComponent(keyId)}`,
+      { method: 'DELETE', signal, timeoutMs: 15_000 },
+    ),
+
+  agentUsage: (id: string, signal?: AbortSignal) =>
+    request<AgentUsageResponse>(`/agents/${encodeURIComponent(id)}/usage`, {
+      signal, timeoutMs: 15_000,
+    }),
+
+  agentConnection: (id: string, signal?: AbortSignal) =>
+    request<AgentConnection>(`/agents/${encodeURIComponent(id)}/connection`, {
+      signal, timeoutMs: 15_000,
+    }),
+
+  // ------------------------------------------------ phase 5: validate
+  validateSql: (payload: { source: string; sql: string; metric?: string }, signal?: AbortSignal) =>
+    request<ValidationResult>('/validate/sql', {
+      method: 'POST', body: payload, signal, timeoutMs: 60_000,
+    }),
+
+  // ------------------------------------------------ phase 6: learn
+  submitFeedback: (payload: FeedbackSubmit, signal?: AbortSignal) =>
+    request<FeedbackItem>('/feedback', { method: 'POST', body: payload, signal, timeoutMs: 20_000 }),
+
+  feedback: (source: string, pendingOnly = false, signal?: AbortSignal) =>
+    request<{ items: FeedbackItem[] }>(
+      `/feedback${queryString({ source, pending: pendingOnly ? 'true' : undefined })}`,
+      { signal, timeoutMs: 20_000 },
+    ),
+
+  decideFeedback: (id: string, decision: 'approved' | 'rejected', note = '', signal?: AbortSignal) =>
+    request<FeedbackItem>(`/feedback/${encodeURIComponent(id)}/decision`, {
+      method: 'POST', body: { decision, note }, signal, timeoutMs: 20_000,
+    }),
+
+  metricUsage: (source: string, signal?: AbortSignal) =>
+    request<{ source: string; metrics: MetricUsage[] }>(
+      `/usage/metrics${queryString({ source })}`, { signal, timeoutMs: 20_000 },
+    ),
+
+  // ------------------------------------------------ agents: presets
+  agentPresets: (signal?: AbortSignal) =>
+    request<{ presets: AgentPreset[] }>('/agent-presets', { signal, timeoutMs: 15_000 }),
+
+  // ------------------------------------------------ semantic: autopilot
+  setMetricStatus: (name: string, source: string, status: 'approved' | 'draft' | 'deprecated',
+    signal?: AbortSignal) =>
+    request<MetricSummary>(`/metrics/${encodeURIComponent(name)}/status`, {
+      method: 'POST', body: { source, status }, signal, timeoutMs: 15_000,
+    }),
+
+  approveProposedMetrics: (source: string, signal?: AbortSignal) =>
+    request<{ source: string; approved: string[] }>('/metrics/approve-proposed', {
+      method: 'POST', body: { source }, signal, timeoutMs: 30_000,
+    }),
+
+  metricInsights: (
+    name: string,
+    query: { source: string; groupBy?: string; previewDraft?: boolean; grain?: string },
+    signal?: AbortSignal,
+  ) =>
+    request<MetricInsightsResponse>(
+      `/metrics/${encodeURIComponent(name)}/insights${queryString({
+        source: query.source,
+        group_by: query.groupBy || undefined,
+        preview_draft: query.previewDraft ? 'true' : undefined,
+        grain: query.grain || undefined,
+      })}`,
+      { signal, timeoutMs: 120_000 },
+    ),
+
+  /** Load a source in the background; poll `job` for progress. */
+  startSourceLoad: (payload: CreateSourceRequest, signal?: AbortSignal) =>
+    request<{ job_id: string; status: string }>('/sources', {
+      method: 'POST', body: { ...payload, background: true }, signal, timeoutMs: 30_000,
+    }),
+
+  job: (jobId: string, signal?: AbortSignal) =>
+    request<LoadJob>(`/jobs/${encodeURIComponent(jobId)}`, { signal, timeoutMs: 15_000 }),
+
+  entities: (source: string, cls: string, q = '', signal?: AbortSignal) =>
+    request<{ source: string; class: string; keys: string[]; total: number }>(
+      `/entities${queryString({ source, class: cls, q: q || undefined, limit: 50 })}`,
+      { signal, timeoutMs: 30_000 },
+    ),
+
+  contextSuggestions: (source: string, signal?: AbortSignal) =>
+    request<ContextSuggestions>(`/context/suggestions${queryString({ source })}`, {
+      signal, timeoutMs: 60_000,
+    }),
+
+  // ------------------------------------------------ semantic: synonyms
+  setMetricSynonyms: (name: string, source: string, synonyms: string[], signal?: AbortSignal) =>
+    request<{ metric: string; source: string; synonyms: string[] }>(
+      `/metrics/${encodeURIComponent(name)}/synonyms`,
+      { method: 'PUT', body: { source, synonyms }, signal, timeoutMs: 15_000 },
+    ),
 
   getRun: (runId: string, signal?: AbortSignal) =>
     request<RunResponse>(`/runs/${encodeURIComponent(runId)}`, { signal, timeoutMs: 30_000 }),

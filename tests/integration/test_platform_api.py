@@ -1,4 +1,4 @@
-"""The production API surface: onboarding -> four layers -> published agent."""
+"""The production API surface: onboarding -> four layers -> agent evidence."""
 
 from __future__ import annotations
 
@@ -41,11 +41,10 @@ def client(tmp_path, monkeypatch):
         yield test_client
 
 
-def test_health_and_tools_without_a_source(client):
+def test_health_without_a_source(client):
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
-    assert client.get("/api/tools").status_code == 200
 
 
 def test_onboarding_builds_metric_then_agent_and_evidence(client, tmp_path):
@@ -61,7 +60,9 @@ def test_onboarding_builds_metric_then_agent_and_evidence(client, tmp_path):
     assert payload["status"] == "built"
 
     metrics = client.get("/api/metrics", params={"source": "revenue"}).json()
-    assert [m["name"] for m in metrics["metrics"]] == ["revenue"]
+    metric_names = {m["name"] for m in metrics["metrics"]}
+    assert "revenue" in metric_names
+    assert {"order_volume", "average_order_value", "refund_rate"} <= metric_names
 
     evaluated = client.post("/api/metrics/revenue/evaluate", json={
         "source": "revenue", "group_by": "segment"})
@@ -81,10 +82,6 @@ def test_onboarding_builds_metric_then_agent_and_evidence(client, tmp_path):
     agent = created.json()
     assert agent["id"]
     assert agent["source_id"] == "revenue"
-
-    published = client.post(f"/api/agents/{agent['id']}/publish")
-    assert published.status_code == 200
-    assert published.json()["status"] == "published"
 
     question = ("Why did West revenue fall in October 2026, which segments "
                 "drove it, and can I trust it?")
