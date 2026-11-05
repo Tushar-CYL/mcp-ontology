@@ -2,6 +2,31 @@
 
 One file. Install once, point it at any data source, see the four layers.
 
+## 0. Run the web app (the usual way)
+
+Needs Python 3.10+ and Node.js 18+ (https://nodejs.org).
+
+```powershell
+copy .env.example .env                # optional: add the EYQ key for the AI
+python -m pip install -r requirements.txt
+python run_server.py                  # first start builds the web app (a minute)
+```
+
+Then open **http://127.0.0.1:8000**. You do not need to run npm yourself:
+`run_server.py` builds `frontend/` when it is missing or changed. If the page
+says "Strata API is running" instead of the app, Node.js was not found: install
+it and start the server again.
+
+Problems:
+
+| You see | Do |
+|---|---|
+| Browser shows "Not Found" or the API page | Start with `python run_server.py` (not `uvicorn` directly), or `cd frontend && npm install && npm run build` |
+| "npm was not found" in the terminal | Install Node.js 18+, open a new terminal, run again |
+| Port 8000 already in use | `python run_server.py --port 8010` and open that port |
+| AI shows "AI off" | Put `EYQ_INCUBATOR_ENDPOINT` and `EYQ_INCUBATOR_KEY` in `.env`, restart |
+| Errors after `git pull` | `python -m pip install -r requirements.txt`, then restart (the UI rebuilds itself) |
+
 ## 1. Install (once)
 
 ```powershell

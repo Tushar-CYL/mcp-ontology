@@ -17,13 +17,33 @@ e-commerce export, or a 100-table lake.
 
 One file with everything you need: **[START_HERE.md](START_HERE.md)**
 
+**Run the app (new machine):** needs Python 3.10+ and Node.js 18+.
+
 ```powershell
+git clone https://github.com/Tushar-CYL/mcp-ontology.git
+cd mcp-ontology
+copy .env.example .env                # add the EYQ key for AI (optional)
 python -m pip install -r requirements.txt
-python run.py                         # built-in example
-python run.py "C:\data\your.db"       # or a folder, a file, a URL
-python run_server.py --port 8000      # Strata UI + API + MCP on http://127.0.0.1:8000
+python run_server.py                  # builds the web app the first time, then:
+                                      # open http://127.0.0.1:8000
+```
+
+That is all: you do **not** need to run npm yourself. `run_server.py` runs
+`npm install` and `npm run build` in `frontend/` when the web app is missing or
+out of date (after a `git pull`), then serves the UI, the API and MCP on one
+address.
+
+Other commands:
+
+```powershell
+python run_server.py --port 8010      # another port
+python run_server.py --rebuild-ui     # force a fresh web-app build
+python run.py "C:\data\your.db"       # command-line run on a file, folder or URL
 python -m pytest -q                   # the test suite
 ```
+
+Frontend development (hot reload): `python run_server.py --no-ui` in one
+terminal, `cd frontend && npm run dev` in another, open http://localhost:5173.
 
 ## The four layers
 
