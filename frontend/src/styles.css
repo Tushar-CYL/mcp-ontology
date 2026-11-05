@@ -4938,44 +4938,6 @@ textarea.mono {
 }
 
 /* ------------------------------------------------------------------ */
-/* Four tools (home)                                                   */
-/* ------------------------------------------------------------------ */
-.tool-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
-}
-.tool-card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-top: 4px solid var(--border-strong);
-  border-radius: var(--radius);
-  color: var(--ink);
-  text-decoration: none;
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.15s ease, transform 0.15s ease;
-}
-.tool-card:hover,
-.tool-card:focus-visible {
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
-}
-.tool-card--ontology { border-top-color: var(--accent); }
-.tool-card--agent { background: var(--ey-dark); color: #fff; border-color: var(--ey-dark); border-top-color: var(--accent); }
-.tool-card--agent .tool-card__story { color: #e6e6ee; }
-.tool-card__head { display: flex; align-items: center; gap: 10px; }
-.tool-card__title { font-weight: 700; font-size: 1.02rem; flex: 1; }
-.tool-card__io { display: grid; grid-template-columns: 64px 1fr; gap: 6px 10px; margin: 0; font-size: 0.88rem; }
-.tool-card__io dt { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.04em; padding-top: 2px; }
-.tool-card__io dd { margin: 0; color: var(--ink-soft); }
-.tool-card__story { margin: 0; font-size: 0.92rem; line-height: 1.5; }
-.tool-card__open { margin-top: auto; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.88rem; }
-
-/* ------------------------------------------------------------------ */
 /* Ontology Accelerator                                                */
 /* ------------------------------------------------------------------ */
 .eo-header-actions { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }

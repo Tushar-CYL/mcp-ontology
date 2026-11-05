@@ -4,7 +4,6 @@ import { SourceProvider } from './context/SourceProvider'
 import { ToastProvider } from './context/ToastProvider'
 import { AppShell } from './layout/AppShell'
 import { Agents } from './pages/Agents'
-import { Home } from './pages/Home'
 import { LayersLayout } from './pages/LayersLayout'
 import { NotFound } from './pages/NotFound'
 import { Onboarding } from './pages/Onboarding'
@@ -23,8 +22,10 @@ export default function App() {
           <AppErrorBoundary>
             <Routes>
               <Route element={<AppShell />}>
-                <Route index element={<Navigate to="/home" replace />} />
-                <Route path="home" element={<Home />} />
+                {/* The app opens on the Ontology tool. /home (the old overview page,
+                    removed) still lands there for old bookmarks. */}
+                <Route index element={<Navigate to="/tools/ontology" replace />} />
+                <Route path="home" element={<Navigate to="/tools/ontology" replace />} />
                 <Route path="tools/ontology" element={<SimpleOntology />} />
                 <Route path="tools/ontology/:oid" element={<SimpleOntology />} />
                 {/* The full governance journey (approvals, roles, maturity). */}
