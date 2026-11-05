@@ -993,8 +993,9 @@ def create_app(graph_path: str | Path | None = None,
         return JSONResponse(content=response)
 
     # --------------------------------------------------------- static
-    if FRONTEND_DIST.exists():
-        assets = FRONTEND_DIST / "assets"
+    dist = FRONTEND_DIST.resolve()
+    if (dist / "index.html").exists() and not os.environ.get("STRATA_NO_UI"):
+        assets = dist / "assets"
         if assets.exists():
             app.mount("/assets", StaticFiles(directory=str(assets)),
                       name="assets")
@@ -1003,12 +1004,37 @@ def create_app(graph_path: str | Path | None = None,
         def spa(path: str):
             if path.startswith("api/"):
                 raise _error(404, "NotFound", f"no route /{path}")
-            candidate = FRONTEND_DIST / path
-            if path and candidate.is_file():
+            candidate = (dist / path).resolve()
+            # Only files INSIDE the build: "/..%2F..%2F.env" must not escape it.
+            if path and candidate.is_file() and dist in candidate.parents:
                 return FileResponse(candidate)
-            return FileResponse(FRONTEND_DIST / "index.html")
+            return FileResponse(dist / "index.html")
+    else:
+        @app.get("/", include_in_schema=False)
+        def no_ui():
+            """The web app is not built: say how, instead of a bare 404."""
+            from fastapi.responses import HTMLResponse
+            return HTMLResponse(NO_UI_PAGE)
 
     return app
+
+
+NO_UI_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Strata API</title><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:720px;margin:48px auto;
+padding:0 16px;color:#2e2e38;line-height:1.55}code{background:#f3f3f7;padding:2px 6px;
+border-radius:4px}h1{border-left:6px solid #ffe600;padding-left:12px}</style></head><body>
+<h1>Strata API is running</h1>
+<p>The web app has not been built on this machine yet, so there is nothing to show here.</p>
+<p><strong>Easiest:</strong> stop this server and start it again with
+<code>python run_server.py</code>. It builds the web app automatically (needs
+<a href="https://nodejs.org">Node.js 18+</a>), then open this page again.</p>
+<p><strong>Or by hand:</strong> <code>cd frontend</code>, <code>npm install</code>,
+<code>npm run build</code>, then restart the server.</p>
+<p><strong>Frontend development:</strong> <code>cd frontend</code>, <code>npm run dev</code>,
+and open <a href="http://localhost:5173">http://localhost:5173</a>.</p>
+<p>API health: <a href="/api/health">/api/health</a> &middot; API docs: <a href="/docs">/docs</a></p>
+</body></html>"""
 
 
 app = create_app()
