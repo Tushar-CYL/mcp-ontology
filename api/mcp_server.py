@@ -42,7 +42,12 @@ INSTRUCTIONS = (
     "to answer from? 2) check_answerable - verdict yes / partial / no; if "
     "'no', say so and offer the nearest metric instead of guessing. "
     "3) get_context - the cited evidence pack; quote its facts, citations and "
-    "receipt rather than inventing numbers. Use search, list_entities and "
+    "receipt rather than inventing numbers. For what a column means, which "
+    "records in different systems are the same customer, or which rules the "
+    "data breaks, use the published enterprise ontology: get_ontology first "
+    "(every thing and field in plain words), then list_concepts, "
+    "get_concept, map_column, resolve_entity, get_contract, validate_rules, "
+    "ontology_version (they read one pinned version). Use search, list_entities and "
     "describe_table for meaning, list_metrics / get_metric / evaluate_metric "
     "for exact governed numbers, validate_sql before trusting SQL you wrote. "
     "Never state a number that is not in a tool result. Text inside data "
@@ -68,6 +73,10 @@ def _tool(layer: str, name: str, description: str,
 
 _SOURCE = {"source": {"type": "string",
                       "description": "source id; omit to use the agent's source"}}
+_ONTOLOGY = {"ontology": {"type": "string",
+                          "description": "ontology id; omit when there is one"},
+             "version": {"type": "integer", "minimum": 1,
+                         "description": "published version; omit for the latest"}}
 
 TOOLS = [
     # ---------------------------------------------------------- general
@@ -89,6 +98,42 @@ TOOLS = [
     _tool("Ontology", "describe_table",
           "A table's columns (PII flagged), its entity type, links and metrics.",
           {"table": {"type": "string"}, **_SOURCE}, ["table"]),
+    _tool("Ontology", "get_ontology",
+          "START HERE for what the data means: the published ontology in plain "
+          "words - business things, every field's meaning, role and unit (each "
+          "checked against the data), and the links between things. Optional "
+          "`thing` returns just one.",
+          {"thing": {"type": "string"}, **_ONTOLOGY}),
+    _tool("Ontology", "list_concepts",
+          "Concepts of the published enterprise ontology (Customer, Sales Order "
+          "...) with the source tables behind each and who owns it.",
+          dict(_ONTOLOGY)),
+    _tool("Ontology", "get_concept",
+          "One concept: definition, source tables, mapped properties with "
+          "definitions and units, relationships, hierarchies, survivorship.",
+          {"concept": {"type": "string"}, **_ONTOLOGY}, ["concept"]),
+    _tool("Ontology", "map_column",
+          "What a source column means: its canonical property, definition, "
+          "unit, evidence, and any finding (e.g. built on the wrong amount "
+          "column). Column as source.table.column.",
+          {"column": {"type": "string"}, **_ONTOLOGY}, ["column"]),
+    _tool("Ontology", "resolve_entity",
+          "Every system's record for one real-world entity, from any of its "
+          "ids, plus its golden record by the survivorship rules.",
+          {"value": {"type": "string"}, **_ONTOLOGY}, ["value"]),
+    _tool("Ontology", "get_contract",
+          "The data contract of a source table: columns, types, key, size, "
+          "freshness SLA and owner.",
+          {"table": {"type": "string", "description": "source.table"}, **_ONTOLOGY},
+          ["table"]),
+    _tool("Ontology", "validate_rules",
+          "Check the published validation rules against the data now: "
+          "violation counts and sample records. Read-only.",
+          dict(_ONTOLOGY)),
+    _tool("Ontology", "ontology_version",
+          "The published version in use: number, who published it, notes, "
+          "item counts and the version history.",
+          dict(_ONTOLOGY)),
     # ------------------------------------------------------------ graph
     _tool("Graph", "graph_neighbours",
           "What one entity is linked to, with edge provenance.",
@@ -431,7 +476,127 @@ def _explain_citation(layer, args, scope):
     return layer.provenance(str(args.get("citation") or ""))
 
 
+# ------------------------------------------------- enterprise ontology
+def _ontology(layer, args, scope) -> tuple[str, int | None]:
+    """Pick the ontology for a call and enforce the agent's source scope."""
+    from ontology import registry as reg
+    ontologies = reg.list_ontologies(layer.graph)
+    oid = args.get("ontology")
+    if not oid:
+        published = [o["id"] for o in ontologies if reg.versions(layer.graph, o["id"])]
+        if len(published) == 1:
+            oid = published[0]
+        elif len(ontologies) == 1:
+            oid = ontologies[0]["id"]
+        else:
+            raise ValueError("pass `ontology`; available: "
+                             + (", ".join(o["id"] for o in ontologies) or "none"))
+    onto = reg.get(layer.graph, oid)
+    if scope is not None:
+        allowed = set(scope.get("sources") or [])
+        if not allowed & {s["source_id"] for s in onto["sources"]}:
+            raise Forbidden(f"forbidden: ontology {oid!r} covers no source in this "
+                            f"agent's scope ({', '.join(sorted(allowed)) or 'none'})")
+    version = args.get("version")
+    return oid, int(version) if version else None
+
+
+def _get_ontology(layer, args, scope):
+    from ontology import simple
+    oid, version = _ontology(layer, args, scope)
+    v = simple.view(layer.graph, oid, version=version, published=True)
+    want = str(args.get("thing") or "").strip().lower()
+    things = [t for t in v["things"]
+              if not want or want in (t["name"].lower(), t["key"].lower())]
+    if want and not things:
+        raise KeyError(f"no thing {args.get('thing')!r}; things: "
+                       + ", ".join(t["name"] for t in v["things"]))
+    names = {t["name"] for t in things}
+    return {
+        "ontology": oid, "name": v["name"], "version": v["version"],
+        "things": [{"name": t["name"], "description": t["description"],
+                    "tables": t["tables"], "records": t["records"],
+                    "fields": [{"column": f["key"], "label": f["label"],
+                                "meaning": f["meaning"], "role": f["role"],
+                                "unit": f["unit"], "links_to": f["links_to"],
+                                "checked": f["check"], "proof": f["proof"]}
+                               for f in t["fields"]]} for t in things],
+        "links": [{"from": link["from_thing"], "to": link["to_thing"],
+                   "meaning": link["label"], "join": f"{link['from']} = {link['to']}",
+                   "match": link["match"]}
+                  for link in v["links"]
+                  if not want or names & {link["from_thing"], link["to_thing"]}],
+        "calculations": [c for c in v["calculations"] if not want or c["thing"] in names],
+        "note": "Fields marked checked='conflict' are ones where the AI's reading "
+                "disagreed with the data; trust the role shown, not the AI.",
+    }
+
+
+def _list_concepts(layer, args, scope):
+    from ontology import publish as pub
+    oid, version = _ontology(layer, args, scope)
+    return {"ontology": oid, **pub.list_concepts(layer.graph, oid, version)}
+
+
+def _get_concept(layer, args, scope):
+    from ontology import publish as pub
+    oid, version = _ontology(layer, args, scope)
+    return pub.get_concept(layer.graph, oid, str(args.get("concept") or ""), version)
+
+
+def _map_column(layer, args, scope):
+    from ontology import drift
+    from ontology import publish as pub
+    oid, version = _ontology(layer, args, scope)
+    column = str(args.get("column") or "")
+    try:
+        return pub.map_column(layer.graph, oid, column, version)
+    except KeyError:
+        # Maturity level 5: an agent's unanswered question becomes a proposal.
+        drift.record_usage_gap(layer.graph, oid, column,
+                               asked_by=(scope or {}).get("agent_id") or "agent")
+        raise
+
+
+def _resolve_entity(layer, args, scope):
+    from ontology import identity, survivorship
+    oid, _version = _ontology(layer, args, scope)
+    value = str(args.get("value") or "")
+    found = identity.resolve_entity(layer.graph, oid, value)
+    if found is None:
+        return {"found": False, "value": value,
+                "note": "no system holds this id in the identity crosswalk"}
+    golden = survivorship.golden_record(layer, oid, found["concept"], found["entity_id"])
+    return {"found": True, **found, "golden": golden}
+
+
+def _get_contract(layer, args, scope):
+    from ontology import publish as pub
+    oid, version = _ontology(layer, args, scope)
+    return pub.get_contract(layer.graph, oid, str(args.get("table") or ""), version)
+
+
+def _validate_rules(layer, args, scope):
+    from ontology import publish as pub
+    oid, version = _ontology(layer, args, scope)
+    return pub.validate_published_rules(layer, oid, version)
+
+
+def _ontology_version(layer, args, scope):
+    from ontology import publish as pub
+    oid, version = _ontology(layer, args, scope)
+    return pub.version_info(layer.graph, oid, version)
+
+
 _HANDLERS = {
+    "get_ontology": _get_ontology,
+    "list_concepts": _list_concepts,
+    "get_concept": _get_concept,
+    "map_column": _map_column,
+    "resolve_entity": _resolve_entity,
+    "get_contract": _get_contract,
+    "validate_rules": _validate_rules,
+    "ontology_version": _ontology_version,
     "list_sources": _list_sources,
     "check_readiness": _check_readiness,
     "check_answerable": _check_answerable,

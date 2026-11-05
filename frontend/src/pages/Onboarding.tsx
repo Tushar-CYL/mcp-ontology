@@ -4,10 +4,8 @@ import { LAYER_FLOW } from '../utils/governance'
 import {
   ArrowRight,
   Database,
-  FileCheck2,
   Layers,
   Network,
-  ShieldCheck,
   Sparkles,
   Upload,
 } from 'lucide-react'
@@ -25,37 +23,6 @@ import { PageHeader } from '../components/PageHeader'
 import { Stat } from '../components/Stat'
 import { TextInput } from '../components/Field'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-
-const LAYER_CARDS = [
-  {
-    key: 'ontology',
-    index: '1',
-    title: 'Ontology',
-    question: 'The catalogue: what kinds of thing exist and how they link.',
-    icon: Layers,
-  },
-  {
-    key: 'graph',
-    index: '2',
-    title: 'Knowledge graph',
-    question: 'The connected map: your real records and their links.',
-    icon: Network,
-  },
-  {
-    key: 'semantic',
-    index: '3',
-    title: 'Semantic layer',
-    question: 'The rulebook: approved numbers everyone agrees on.',
-    icon: FileCheck2,
-  },
-  {
-    key: 'context',
-    index: '4',
-    title: 'Context',
-    question: 'The briefing folder: the few cited facts for one question.',
-    icon: ShieldCheck,
-  },
-] as const
 
 export function Onboarding() {
   useDocumentTitle('Onboarding')
@@ -173,7 +140,7 @@ export function Onboarding() {
       {loading && sources.length === 0 ? <LoadingState label="Loading sources" /> : null}
       {error ? <ErrorState error={error} onRetry={() => void refresh()} /> : null}
 
-      <div className="grid-2 grid-2--wide-left">
+      <div className="onboarding-main">
         <Card
           title="Connect a data source"
           subtitle="A database file, a folder of CSV/Parquet/JSON/Excel, a single file, an RDF graph or a database URL."
@@ -228,31 +195,6 @@ export function Onboarding() {
           </div>
         </Card>
 
-        <Card
-          title="The four layers"
-          subtitle="Each one answers a different question. Agents use all four."
-          className="panel-stack"
-        >
-          <div className="definition-grid">
-            {LAYER_CARDS.map((layer) => {
-              const Icon = layer.icon
-              return (
-                <div className="definition-card" key={layer.key}>
-                  <span className="definition-card__index">{layer.index}</span>
-                  <Icon size={18} aria-hidden="true" />
-                  <div>
-                    <p className="definition-card__title">{layer.title}</p>
-                    <p className="definition-card__question">{layer.question}</p>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          <Callout tone="success" title="The promise">
-            Every agent answer says which layers it used, and says plainly when the evidence is
-            not enough instead of guessing.
-          </Callout>
-        </Card>
       </div>
 
       {sources.length > 0 ? (

@@ -1,25 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   Bot,
   ChartColumn,
   ChevronRight,
-  Database,
   FileText,
+  Sparkles,
   Layers,
   Menu,
   Network,
   Plug,
-  RefreshCw,
   X,
 } from 'lucide-react'
-import { isAbortError } from '../api/client'
-import { Badge } from '../components/Badge'
-import { Button } from '../components/Button'
-import { Spinner } from '../components/Spinner'
 import { useSource } from '../context/SourceContext'
 import { cx } from '../utils/cx'
-import { statusLabel, statusTone } from '../utils/status'
 
 /* Grouped by who uses it: data teams govern, BI teams define metrics,
    agents consume the packed context. */
@@ -27,6 +21,10 @@ type NavItem = { to: string; label: string; icon: typeof Plug }
 
 const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   { label: 'Connect', items: [{ to: '/onboarding', label: 'Data sources', icon: Plug }] },
+  {
+    label: 'Accelerators',
+    items: [{ to: '/tools/ontology', label: 'Ontology', icon: Sparkles }],
+  },
   {
     label: 'The four layers',
     items: [
@@ -42,18 +40,8 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
 const NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((group) => group.items)
 
 export function AppShell() {
-  const {
-    sources,
-    selectedId,
-    selectedSource,
-    health,
-    healthError,
-    loading,
-    selectSource,
-    refresh,
-  } = useSource()
+  const { health, healthError, loading } = useSource()
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
   const location = useLocation()
   const currentLabel = useMemo(() => {
     const item = NAV_ITEMS.find((nav) => location.pathname.startsWith(nav.to))
@@ -72,19 +60,6 @@ export function AppShell() {
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [drawerOpen])
-
-  const handleRefresh = async () => {
-    setRefreshing(true)
-    try {
-      await refresh()
-    } catch (cause) {
-      if (!isAbortError(cause)) {
-        // The source context stores the error; the top bar only reflects it.
-      }
-    } finally {
-      setRefreshing(false)
-    }
-  }
 
   const apiState = healthError
     ? { label: 'API unreachable', tone: 'rose' as const }
@@ -146,9 +121,9 @@ export function AppShell() {
 
         <div className="sidebar__footer">
           <div className="sidebar__note">
-            <p className="sidebar__note-title">Local by design</p>
+            <p className="sidebar__note-title">Your data stays yours</p>
             <p className="sidebar__note-text">
-              No API key in the browser, and no data leaves this machine.
+              No API key in the browser. The AI sees column names and a few sample values, never whole tables.
             </p>
           </div>
           <p className="sidebar__version">Strata · v1.0</p>
@@ -184,35 +159,6 @@ export function AppShell() {
           </div>
 
           <div className="topbar__right">
-          <div className="topbar__source">
-            <Database size={15} className="topbar__source-icon" aria-hidden="true" />
-            <label className="sr-only" htmlFor="global-source">
-              Active data source
-            </label>
-            {sources.length === 0 ? (
-              <span className="topbar__placeholder">
-                {loading ? 'Loading sources…' : 'No source connected'}
-              </span>
-            ) : (
-              <select
-                id="global-source"
-                className="topbar__select"
-                value={selectedId ?? ''}
-                onChange={(event) => selectSource(event.target.value)}
-              >
-                {sources.map((source) => (
-                  <option key={source.id} value={source.id}>
-                    {source.name || source.id}
-                  </option>
-                ))}
-              </select>
-            )}
-            {selectedSource?.status ? (
-              <Badge tone={statusTone(selectedSource.status)} dot>
-                {statusLabel(selectedSource.status)}
-              </Badge>
-            ) : null}
-          </div>
             <span
               className={cx('api-state', `api-state--${apiState.tone}`)}
               role="status"
@@ -221,21 +167,7 @@ export function AppShell() {
               <span className="api-state__dot" aria-hidden="true" />
               {apiState.label}
             </span>
-            <Link to="/onboarding" className="btn btn--primary btn--sm topbar__new">
-              <Plug size={14} aria-hidden="true" />
-              Connect data
-            </Link>
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<RefreshCw size={14} aria-hidden="true" />}
-              onClick={() => void handleRefresh()}
-              loading={refreshing}
-            >
-              Refresh
-            </Button>
           </div>
-          {refreshing ? <Spinner label="Refreshing sources" className="topbar__spinner" /> : null}
         </header>
 
         <main id="main" className="content" tabIndex={-1}>

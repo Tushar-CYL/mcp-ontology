@@ -1,5 +1,25 @@
 import type {
+  OntoBuildRequest,
+  OntoContextResult,
+  OntoFieldEdit,
+  OntoListResponse,
+  OntoUse,
+  OntoView,
   Agent,
+  EoAuditEntry,
+  EoDiff,
+  EoDrift,
+  EoEntity,
+  EoIntake,
+  EoItem,
+  EoJob,
+  EoMap,
+  EoMaturity,
+  EoOntology,
+  EoState,
+  EoStep,
+  EoVersion,
+  EoVersionInfo,
   AgentConnection,
   AgentPreset,
   ContextSuggestions,
@@ -116,6 +136,18 @@ function statusMessage(status: number): string {
 export function normalizeApiError(status: number, payload: unknown): ApiError {
   const fallback = statusMessage(status)
 
+  // A gateway error WITHOUT our envelope comes from the proxy in front of the
+  // API (Vite in development, a reverse proxy in production): the Strata
+  // server itself did not answer. Say that, not "the service failed".
+  const ours = payload !== null && typeof payload === 'object'
+    && typeof (payload as Record<string, unknown>).error === 'object'
+  if ((status === 502 || status === 503 || status === 504) && !ours) {
+    return new ApiError(
+      'Cannot reach the Strata server. It may be stopped or restarting: start it with '
+      + '"python run_server.py --port 8000", then try again.',
+      { status, type: 'Unreachable', payload })
+  }
+
   if (payload !== null && typeof payload === 'object') {
     const record = payload as Record<string, unknown>
     const envelope = record.error
@@ -165,18 +197,19 @@ export interface ErrorDescription {
 /** Human-readable rendering for any thrown value, used by ErrorState. */
 export function describeError(error: unknown): ErrorDescription {
   if (error instanceof ApiError) {
+    const unreachable = error.status === 0 || error.type === 'Unreachable'
     const title =
       error.status === 404
         ? 'Not available yet'
-        : error.status === 0
-          ? 'Cannot reach the service'
+        : unreachable
+          ? 'Cannot reach the server'
           : error.status >= 500
             ? 'The service failed'
             : 'That request was rejected'
 
     let hint: string | undefined
-    if (error.status === 0) {
-      hint = 'Start the local API (python -m api.http) and check that /api is proxied to it.'
+    if (unreachable) {
+      hint = 'Start the server (python run_server.py --port 8000), then press Try again.'
     } else if (error.status === 404) {
       hint = 'No fallback data was invented. This screen stays empty until the endpoint answers.'
     } else if (error.status >= 500) {
@@ -505,4 +538,143 @@ export const api = {
 
   getRun: (runId: string, signal?: AbortSignal) =>
     request<RunResponse>(`/runs/${encodeURIComponent(runId)}`, { signal, timeoutMs: 30_000 }),
+
+  // ---------------------------------------- ontology accelerator (/api/eo)
+  eoSteps: (signal?: AbortSignal) =>
+    request<{ steps: Array<Pick<EoStep, 'id' | 'title' | 'level' | 'what'>> }>('/eo/steps', { signal }),
+
+  eoOntologies: (signal?: AbortSignal) =>
+    request<{ ontologies: EoOntology[] }>('/eo/ontologies', { signal }),
+
+  /* ---- the simple ontology flow ---------------------------------- */
+  ontoList: (signal?: AbortSignal) =>
+    request<OntoListResponse>('/onto', { signal, timeoutMs: 30_000 }),
+
+  /** Connect data (+ optional metadata) and build an ontology: a job. */
+  ontoBuild: (body: OntoBuildRequest, signal?: AbortSignal) =>
+    request<{ job_id: string; status: string }>('/onto/build', {
+      method: 'POST', body, signal, timeoutMs: 30_000,
+    }),
+
+  ontoView: (oid: string, signal?: AbortSignal) =>
+    request<OntoView>(`/onto/${encodeURIComponent(oid)}`, { signal, timeoutMs: 60_000 }),
+
+  ontoRebuild: (oid: string, signal?: AbortSignal) =>
+    request<{ job_id: string; status: string }>(`/onto/${encodeURIComponent(oid)}/rebuild`, {
+      method: 'POST', signal, timeoutMs: 30_000,
+    }),
+
+  ontoAddMetadata: (oid: string, path: string, signal?: AbortSignal) =>
+    request<{ job_id: string; status: string; file: string; tables: number }>(
+      `/onto/${encodeURIComponent(oid)}/metadata`, {
+        method: 'POST', body: { path }, signal, timeoutMs: 30_000,
+      }),
+
+  ontoContext: (oid: string, text: string, signal?: AbortSignal) =>
+    request<OntoContextResult>(`/onto/${encodeURIComponent(oid)}/context`, {
+      method: 'POST', body: { text }, signal, timeoutMs: 180_000,
+    }),
+
+  ontoEditField: (oid: string, edit: OntoFieldEdit, signal?: AbortSignal) =>
+    request<OntoView>(`/onto/${encodeURIComponent(oid)}/fields`, {
+      method: 'PUT', body: edit, signal, timeoutMs: 60_000,
+    }),
+
+  ontoEditThing: (oid: string, edit: { key: string; name?: string; description?: string },
+    signal?: AbortSignal) =>
+    request<OntoView>(`/onto/${encodeURIComponent(oid)}/things`, {
+      method: 'PUT', body: edit, signal, timeoutMs: 60_000,
+    }),
+
+  ontoDelete: (oid: string, signal?: AbortSignal) =>
+    request<{ deleted: string }>(`/onto/${encodeURIComponent(oid)}`, {
+      method: 'DELETE', signal,
+    }),
+
+  ontoUse: (oid: string, signal?: AbortSignal) =>
+    request<OntoUse>(`/onto/${encodeURIComponent(oid)}/use`, { signal }),
+
+  /** Where the browser downloads the Excel workbook from (same origin). */
+  ontoExcelUrl: (oid: string) => `${API_BASE}/onto/${encodeURIComponent(oid)}/excel`,
+
+  eoCreate: (intake: EoIntake, signal?: AbortSignal) =>
+    request<EoOntology>('/eo/ontologies', { method: 'POST', body: intake, signal }),
+
+  /** Generate the BI/MDM scenario, load its five sources and run the journey. */
+  eoDemo: (customers = 300, signal?: AbortSignal) =>
+    request<{ job_id: string; status: string }>('/eo/demo', {
+      method: 'POST', body: { customers, run: true }, signal, timeoutMs: 30_000,
+    }),
+
+  eoJob: (jobId: string, signal?: AbortSignal) =>
+    request<EoJob>(`/jobs/${encodeURIComponent(jobId)}`, { signal, timeoutMs: 15_000 }),
+
+  eoState: (oid: string, signal?: AbortSignal) =>
+    request<EoState>(`/eo/${encodeURIComponent(oid)}`, { signal, timeoutMs: 60_000 }),
+
+  eoRun: (oid: string, upto?: string, signal?: AbortSignal) =>
+    request<{ job_id: string; status: string }>(`/eo/${encodeURIComponent(oid)}/run`, {
+      method: 'POST', body: { upto: upto ?? null }, signal, timeoutMs: 30_000,
+    }),
+
+  eoItems: <P = Record<string, unknown>>(oid: string, kind: string, signal?: AbortSignal) =>
+    request<{ items: EoItem<P>[] }>(
+      `/eo/${encodeURIComponent(oid)}/items${queryString({ kind })}`, { signal, timeoutMs: 60_000 }),
+
+  eoDecide: (oid: string, body: {
+    kind: string
+    key: string
+    decision: 'approved' | 'rejected' | 'edited'
+    by: string
+    payload?: Record<string, unknown>
+    note?: string
+  }, signal?: AbortSignal) =>
+    request<EoItem>(`/eo/${encodeURIComponent(oid)}/decide`, { method: 'POST', body, signal }),
+
+  eoApproveAll: (oid: string, kind: string, by: string, minConfidence = 0, signal?: AbortSignal) =>
+    request<{ approved: string[] }>(`/eo/${encodeURIComponent(oid)}/approve-all`, {
+      method: 'POST', body: { kind, by, min_confidence: minConfidence }, signal, timeoutMs: 60_000,
+    }),
+
+  eoOwners: (oid: string, signal?: AbortSignal) =>
+    request<{ owners: Record<string, string> }>(`/eo/${encodeURIComponent(oid)}/owners`, {
+      method: 'POST', signal,
+    }),
+
+  eoGrant: (oid: string, user: string, role: 'viewer' | 'editor' | 'approver', signal?: AbortSignal) =>
+    request<{ roles: Array<{ user: string; role: string }> }>(`/eo/${encodeURIComponent(oid)}/roles`, {
+      method: 'POST', body: { user, role }, signal,
+    }),
+
+  eoPublish: (oid: string, by: string, notes: string, signal?: AbortSignal) =>
+    request<EoVersionInfo>(`/eo/${encodeURIComponent(oid)}/publish`, {
+      method: 'POST', body: { by, notes }, signal, timeoutMs: 120_000,
+    }),
+
+  eoVersions: (oid: string, signal?: AbortSignal) =>
+    request<{ versions: EoVersion[] }>(`/eo/${encodeURIComponent(oid)}/versions`, { signal }),
+
+  eoDiff: (oid: string, a: number, b: number, signal?: AbortSignal) =>
+    request<EoDiff>(`/eo/${encodeURIComponent(oid)}/diff${queryString({ a, b })}`, { signal }),
+
+  eoAudit: (oid: string, signal?: AbortSignal) =>
+    request<{ audit: EoAuditEntry[] }>(`/eo/${encodeURIComponent(oid)}/audit`, { signal }),
+
+  eoMaturity: (oid: string, signal?: AbortSignal) =>
+    request<EoMaturity>(`/eo/${encodeURIComponent(oid)}/maturity`, { signal }),
+
+  eoMap: (oid: string, signal?: AbortSignal) =>
+    request<EoMap>(`/eo/${encodeURIComponent(oid)}/map`, { signal }),
+
+  eoDrift: (oid: string, signal?: AbortSignal) =>
+    request<EoDrift>(`/eo/${encodeURIComponent(oid)}/drift`, {
+      method: 'POST', signal, timeoutMs: 120_000,
+    }),
+
+  eoResolve: (oid: string, value: string, signal?: AbortSignal) =>
+    request<EoEntity>(`/eo/${encodeURIComponent(oid)}/resolve${queryString({ value })}`, { signal }),
+
+  /** A plain link for downloads (Turtle, SHACL, the Git zip). */
+  eoExportUrl: (oid: string, kind: 'turtle' | 'shacl' | 'zip', version?: number) =>
+    `${API_BASE}/eo/${encodeURIComponent(oid)}/export/${kind}${queryString({ version })}`,
 }

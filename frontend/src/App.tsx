@@ -4,6 +4,7 @@ import { SourceProvider } from './context/SourceProvider'
 import { ToastProvider } from './context/ToastProvider'
 import { AppShell } from './layout/AppShell'
 import { Agents } from './pages/Agents'
+import { Home } from './pages/Home'
 import { LayersLayout } from './pages/LayersLayout'
 import { NotFound } from './pages/NotFound'
 import { Onboarding } from './pages/Onboarding'
@@ -11,6 +12,8 @@ import { ContextPanel } from './pages/layers/ContextPanel'
 import { GraphPanel } from './pages/layers/GraphPanel'
 import { OntologyPanel } from './pages/layers/OntologyPanel'
 import { SemanticPanel } from './pages/layers/SemanticPanel'
+import { OntologyAccelerator } from './pages/ontology/OntologyAccelerator'
+import { SimpleOntology } from './pages/ontology/SimpleOntology'
 
 export default function App() {
   return (
@@ -20,7 +23,13 @@ export default function App() {
           <AppErrorBoundary>
             <Routes>
               <Route element={<AppShell />}>
-                <Route index element={<Navigate to="/onboarding" replace />} />
+                <Route index element={<Navigate to="/home" replace />} />
+                <Route path="home" element={<Home />} />
+                <Route path="tools/ontology" element={<SimpleOntology />} />
+                <Route path="tools/ontology/:oid" element={<SimpleOntology />} />
+                {/* The full governance journey (approvals, roles, maturity). */}
+                <Route path="tools/ontology-advanced" element={<OntologyAccelerator />} />
+                <Route path="tools/ontology-advanced/:oid" element={<OntologyAccelerator />} />
                 <Route path="onboarding" element={<Onboarding />} />
                 <Route path="layers" element={<LayersLayout />}>
                   <Route index element={<Navigate to="ontology" replace />} />

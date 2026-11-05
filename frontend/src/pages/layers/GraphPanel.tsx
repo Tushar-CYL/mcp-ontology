@@ -47,8 +47,9 @@ function GraphView({ source }: { source: SourceSummary }) {
     [source.id, relation, debouncedBudget],
   )
 
-  const nodes = graph.data?.nodes ?? []
-  const edges = graph.data?.edges ?? []
+  // Memoised: a fresh [] every render re-ran every memo that depends on them.
+  const nodes = useMemo(() => graph.data?.nodes ?? [], [graph.data])
+  const edges = useMemo(() => graph.data?.edges ?? [], [graph.data])
 
   const relationNames = useMemo(() => {
     const names = new Set<string>()

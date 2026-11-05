@@ -131,8 +131,10 @@ def _from_triple_folder(con, folder: Path, files: list[Path],
     by_stem = {f.stem.lower(): f for f in files}
     if "entities" not in by_stem or "relations" not in by_stem:
         return None
-    splits = [by_stem[s] for s in ("triples", "train", "test", "valid")
-              if s in by_stem]
+    # `triples` is the whole graph; train/test/valid are the same triples split
+    # for model training. Reading both counted every triple twice.
+    splits = ([by_stem["triples"]] if "triples" in by_stem else
+              [by_stem[s] for s in ("train", "test", "valid") if s in by_stem])
     if not splits:
         return None
 

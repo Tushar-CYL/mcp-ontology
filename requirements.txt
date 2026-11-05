@@ -22,6 +22,9 @@ duckdb>=1.4,<3             # MIT    - embedded engine, no server to install
 PyYAML>=6.0,<7             # MIT    - run.py's startup guard checks it; no YAML
                            #          file is read by the current code yet
 pytest>=8.0,<10            # MIT    - the tests (on 9.2.0)
+pytz>=2024.1               # MIT    - DuckDB needs it to hand time-zone timestamps
+                           #          (TIMESTAMPTZ in Parquet/Postgres) to Python;
+                           #          without it any such column crashed a request
 
 # ---- optional: extra formats and cloud connectors --------------------------
 # Not installed by default; the code prints the install command when a matching

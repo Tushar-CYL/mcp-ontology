@@ -15,6 +15,7 @@ there is no second implementation of a metric or a context pack.
 
 from __future__ import annotations
 
+import duckdb
 import json
 import logging
 import os
@@ -242,8 +243,18 @@ class Platform:
 
     def start_load(self, path: str, name: str | None = None) -> str:
         """Load a source on a background thread; return the job id."""
+        def work(step):
+            try:
+                return self.add_source(path, name, progress=step)
+            except FileNotFoundError as exc:
+                raise RuntimeError(f"path not found: {path}") from exc
+        return self.start_job(work, label="load", path=path, name=name)
+
+    def start_job(self, work, label: str = "job", **fields) -> str:
+        """Run `work(progress)` on a background thread; return the job id.
+        Progress lines and the result or error are read with `job_view`."""
         job_id = "job_" + uuid.uuid4().hex[:12]
-        job = {"id": job_id, "status": "running", "path": path, "name": name,
+        job = {"id": job_id, "status": "running", "label": label, **fields,
                "steps": [], "result": None, "error": None,
                "started": time.time(), "finished": None}
         self.jobs[job_id] = job
@@ -254,13 +265,17 @@ class Platform:
 
         def run() -> None:
             try:
-                job["result"] = self.add_source(path, name, progress=step)
+                job["result"] = work(step)
                 job["status"] = "done"
-            except FileNotFoundError:
-                job["error"] = f"path not found: {path}"
+            except RuntimeError as exc:
+                job["error"] = str(exc)
+                job["status"] = "failed"
+            except (MemoryError, duckdb.OutOfMemoryException) as exc:
+                logger.exception("background %s ran out of memory", label)
+                job["error"] = memory_message(exc, len(self.layer.bundles))
                 job["status"] = "failed"
             except Exception as exc:              # noqa: BLE001 - reported
-                logger.exception("background load failed")
+                logger.exception("background %s failed", label)
                 job["error"] = f"{type(exc).__name__}: {exc}"
                 job["status"] = "failed"
             finally:
@@ -280,6 +295,8 @@ class Platform:
 
     def add_source(self, path: str, name: str | None = None,
                    progress=None) -> dict:
+        from api import paths
+        paths.check(path)                      # STRATA_DATA_ROOTS, when set
         if not Path(path).exists() and not path.lower().startswith(
                 ("postgres://", "mysql://", "snowflake://", "databricks://",
                  "http://", "https://")):
@@ -431,6 +448,18 @@ def _connection_details(agent: dict, base: str) -> dict:
                              f'{mcp_url} --header "{auth}"')}}
 
 
+def memory_message(exc: BaseException, open_sources: int) -> str:
+    """Plain words for an out-of-memory failure, with what to do about it."""
+    from knowledge_graph.store import memory_settings
+    limit = memory_settings()["memory_limit"]
+    return (f"Ran out of memory while building this source ({open_sources} other "
+            f"source(s) are open; the graph may use up to {limit}). Big sources "
+            "already loaded hold memory: restart the server so only what you need "
+            "is reopened (MIDDLE_LAYER_WARM_SOURCES lists them), or raise the limit "
+            "with STRATA_DUCKDB_MEMORY, e.g. 5GB. Detail: "
+            + str(exc).splitlines()[0][:200])
+
+
 def _error(status: int, kind: str, message: str) -> HTTPException:
     return HTTPException(status_code=status,
                          detail={"error": {"type": kind,
@@ -521,6 +550,11 @@ def create_app(graph_path: str | Path | None = None,
     def platform(request: Request) -> Platform:
         return request.app.state.platform
 
+    from api import eo_routes
+    eo_routes.register(app, platform, _error)
+    from api import onto_routes
+    onto_routes.register(app, platform, _error)
+
     # ---------------------------------------------------------- health
     @app.get("/api/health")
     def health(request: Request):
@@ -545,6 +579,11 @@ def create_app(graph_path: str | Path | None = None,
 
     @app.post("/api/sources")
     def add_source(request: Request, body: SourceRequest):
+        from api import paths
+        try:
+            paths.check(body.path)
+        except PermissionError as exc:
+            raise _error(403, "Forbidden", str(exc)) from exc
         if body.background:
             job_id = platform(request).start_load(body.path, body.name)
             return JSONResponse(status_code=202, content={

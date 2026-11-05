@@ -289,6 +289,12 @@ def discover(schema: Schema, names: dict[str, str] | None = None) -> Ontology:
             if c.name.lower() in declared or sole_key:
                 continue
             ref = _referenced_table(schema, c.name)
+            if ref is None:
+                # A column carrying another table's (single-column) key name
+                # is a link: sales_orders.KUNNR -> customers.KUNNR. The build
+                # verifies it against the data and drops it if it does not
+                # match.
+                ref = _table_keyed_by(visible, c.name, exclude=t.name)
             if ref is None or ref.name.lower() == t.name.lower():
                 continue
             target = onto.class_for_table(ref.name)
@@ -320,6 +326,14 @@ def discover(schema: Schema, names: dict[str, str] | None = None) -> Ontology:
                     custom=True, source_name=str(raw))
 
     return onto
+
+
+def _table_keyed_by(tables: list, column: str, exclude: str) -> Table | None:
+    low = column.lower()
+    found = [t for t in tables
+             if t.name.lower() != exclude.lower() and len(t.primary_key) == 1
+             and t.primary_key[0].lower() == low]
+    return found[0] if len(found) == 1 else None
 
 
 def _referenced_table(schema: Schema, column: str) -> Table | None:

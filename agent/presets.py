@@ -22,7 +22,8 @@ PRESETS: dict[str, dict] = {
         "job": "Explains what data exists and what it means: the kinds of "
                "thing, how they link, which metrics are approved.",
         "layers": ["ontology", "semantic"],
-        "tools": [*_GENERAL, "list_entities", "describe_table", "list_metrics"],
+        "tools": [*_GENERAL, "list_entities", "describe_table", "list_metrics",
+                  "get_ontology", "list_concepts", "get_concept", "map_column", "ontology_version"],
         "guardrails": ["Reads metadata only; never returns data rows or "
                        "numbers", "Personal-data columns are flagged"],
         "output": "Plain explanation of the entity or source, its links and "
@@ -55,7 +56,7 @@ PRESETS: dict[str, dict] = {
                "order: what it is linked to and the evidence behind it.",
         "layers": ["graph", "ontology", "context"],
         "tools": [*_GENERAL, "list_entities", "describe_table",
-                  "graph_neighbours", "get_entity_context"],
+                  "graph_neighbours", "get_entity_context", "resolve_entity"],
         "guardrails": ["One source only", "At most 2 hops and 25 listed "
                        "links per relation", "Personal data removed"],
         "output": "What the entity is, what it links to, and cited facts.",
@@ -72,7 +73,9 @@ PRESETS: dict[str, dict] = {
         "tools": [*_GENERAL, "list_entities", "describe_table",
                   "graph_neighbours", "get_entity_context", "list_metrics",
                   "get_metric", "evaluate_metric", "validate_sql",
-                  "check_answerable", "get_context", "explain_citation"],
+                  "check_answerable", "get_context", "explain_citation",
+                  "get_ontology", "list_concepts", "get_concept", "map_column", "resolve_entity",
+                  "get_contract", "validate_rules", "ontology_version"],
         "guardrails": ["Every number comes from an approved metric",
                        "Answers only when the evidence is sufficient; says "
                        "so plainly otherwise", "Read-only"],
@@ -89,7 +92,8 @@ PRESETS: dict[str, dict] = {
                "freshness, caveats, certification and evidence coverage.",
         "layers": ["semantic", "context", "ontology"],
         "tools": [*_GENERAL, "list_metrics", "get_metric", "check_answerable",
-                  "explain_citation"],
+                  "explain_citation", "validate_rules", "get_contract",
+                  "map_column"],
         "guardrails": ["Read-only", "Reports problems instead of fixing them",
                        "Never computes a new number"],
         "output": "A trust verdict with the checks that passed and failed.",
@@ -105,7 +109,9 @@ PRESETS: dict[str, dict] = {
                "anything itself.",
         "layers": ["semantic", "ontology"],
         "tools": ["list_sources", "search", "list_entities", "list_metrics",
-                  "get_metric", "propose_change"],
+                  "get_metric", "propose_change", "get_ontology", "list_concepts", "get_concept",
+                  "map_column", "resolve_entity", "get_contract", "validate_rules",
+                  "ontology_version"],
         "guardrails": ["Proposal only: a person must approve every change",
                        "Every proposal is audited"],
         "output": "The proposal as filed, waiting for approval.",

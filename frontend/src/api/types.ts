@@ -826,3 +826,348 @@ export interface MetricUsage {
   agents: number
   last_used_at: string
 }
+
+// ------------------------------------------------ ontology accelerator (/api/eo)
+export type EoRole = 'source_system' | 'mdm_hub' | 'data_mart' | 'reference'
+
+export interface EoSource {
+  source_id: string
+  role: EoRole
+  owner_team: string
+  cadence_days: number
+}
+
+export interface EoOntology {
+  id: string
+  name: string
+  problem: string
+  domain: string
+  questions: string[]
+  created_at: string
+  sources: EoSource[]
+  version?: number | null
+  maturity?: number
+}
+
+export type EoStatus = 'proposed' | 'approved' | 'rejected'
+
+export interface EoItem<P = Record<string, unknown>> {
+  kind: string
+  key: string
+  payload: P
+  status: EoStatus
+  confidence: number | null
+  evidence: string[]
+  owner: string
+  updated_at: string
+}
+
+export type EoStepStatus = 'done' | 'review' | 'ready' | 'waiting'
+
+export interface EoStep {
+  id: string
+  title: string
+  level: number
+  what: string
+  kinds: string[]
+  status: EoStepStatus
+  items: number
+  pending: number
+}
+
+export interface EoFinding {
+  key: string
+  type: string
+  column: string
+  detail: string
+  status: EoStatus
+  [extra: string]: unknown
+}
+
+export interface EoCheck {
+  name: string
+  passed: boolean
+  detail: string
+}
+
+export interface EoLevel {
+  level: number
+  name: string
+  passed: boolean
+  checks: EoCheck[]
+}
+
+export interface EoMaturity {
+  ontology: string
+  level: number
+  level_name: string
+  levels: EoLevel[]
+  next_steps: string[]
+}
+
+export interface EoVersion {
+  version: number
+  published_at: string
+  by: string
+  notes: string
+}
+
+export interface EoState {
+  ontology: EoOntology
+  steps: EoStep[]
+  counts: Record<string, Record<EoStatus, number>>
+  findings: EoFinding[]
+  versions: EoVersion[]
+  roles: Array<{ user: string; role: string }>
+  maturity: EoMaturity
+}
+
+export interface EoVersionInfo {
+  ontology: string
+  version: number
+  published_at: string
+  published_by: string
+  notes: string
+  counts: Record<string, number>
+  versions: number[]
+}
+
+export interface EoDiff {
+  from: number
+  to: number
+  added: Array<{ kind: string; key: string }>
+  removed: Array<{ kind: string; key: string }>
+  changed: Array<{ kind: string; key: string }>
+}
+
+export interface EoMapNode {
+  id: string
+  type: 'concept' | 'table' | 'hierarchy'
+  label: string
+  status?: EoStatus
+  tier?: string | null
+  owner?: string
+  description?: string
+  source?: string
+  master?: boolean
+}
+
+export interface EoMapEdge {
+  from: string
+  to: string
+  type: 'member' | 'relationship' | 'hierarchy'
+  label: string
+  detail?: string
+}
+
+export interface EoMap {
+  nodes: EoMapNode[]
+  edges: EoMapEdge[]
+}
+
+export interface EoGoldenValue {
+  value: unknown
+  source: string
+  rule: string
+  alternatives: Record<string, string>
+}
+
+export interface EoEntity {
+  concept: string
+  entity_id: string
+  records: Record<string, string[]>
+  methods: Record<string, { method: string; score: number }>
+  golden: Record<string, EoGoldenValue>
+}
+
+export interface EoDriftChange {
+  type: string
+  table: string | null
+  column: string | null
+  detail: string
+  suggestion: string
+  [extra: string]: unknown
+}
+
+export interface EoDrift {
+  version: number
+  checked_at: string
+  changes: EoDriftChange[]
+}
+
+export interface EoJob {
+  id: string
+  status: 'running' | 'done' | 'failed'
+  label: string
+  steps: Array<{ t: number; text: string }>
+  result: Record<string, unknown> | null
+  error: string | null
+  elapsed_s: number
+}
+
+export interface EoIntake {
+  id: string
+  name: string
+  problem: string
+  domain: string
+  questions: string[]
+  sources: EoSource[]
+}
+
+export interface EoAuditEntry {
+  kind: string
+  key: string
+  decision: string
+  by: string
+  note: string
+  at: string
+}
+
+/* ------------------------------------------------------------------
+ * The simple ontology flow (/api/onto): connect -> ontology -> use it.
+ * ------------------------------------------------------------------ */
+export type OntoCheck = 'verified' | 'conflict' | 'unchecked'
+export type OntoSetBy = 'you' | 'metadata' | 'ai' | 'engine'
+
+export interface OntoField {
+  key: string
+  table: string
+  column: string
+  label: string
+  meaning: string
+  role: string
+  role_label: string
+  unit: string | null
+  type: string
+  by: OntoSetBy
+  check: OntoCheck
+  proof: string
+  confidence: number
+  links_to: string | null
+}
+
+export interface OntoThing {
+  key: string
+  name: string
+  description: string
+  by: OntoSetBy
+  tables: string[]
+  records: number
+  fields: OntoField[]
+}
+
+export interface OntoLink {
+  key: string
+  from_thing: string
+  to_thing: string
+  from: string
+  to: string
+  cardinality: string
+  label: string
+  match: number | null
+  declared?: string | null
+  proof: string[]
+  /** Knowledge-graph links: the verb, the relation name and how many triples. */
+  verb?: string | null
+  relation?: string | null
+  triples?: number | null
+}
+
+export interface OntoNote {
+  key: string
+  text: string
+  by: string
+  at: string
+  method: 'ai' | 'rules'
+  reply: string
+  changes: Array<Record<string, string>>
+}
+
+export interface OntoAi {
+  configured: boolean
+  model: string
+  samples_per_column: number
+}
+
+export interface OntoSummary {
+  things: number
+  fields: number
+  links: number
+  checks: Record<OntoCheck, number>
+  by: Partial<Record<OntoSetBy, number>>
+}
+
+export interface OntoBuilt {
+  at: string
+  seconds: number
+  version: number
+  ai: { used: boolean; calls: number; errors: string[]; model: string | null }
+  /** Knowledge graphs: rarer relations counted but not listed as links. */
+  hidden_relations?: number
+  hidden_triples?: number
+}
+
+export interface OntoView {
+  id: string
+  name: string
+  domain: string
+  problem: string
+  created_at: string
+  sources: string[]
+  metadata: string[]
+  version: number | null
+  published_at: string | null
+  built: OntoBuilt | null
+  summary: OntoSummary
+  things: OntoThing[]
+  links: OntoLink[]
+  hierarchies: Array<{ thing: string; levels: string[]; proof: string[] }>
+  calculations: Array<{ thing: string; name: string; expression: string; description: string }>
+  notes: OntoNote[]
+  findings: Array<{ type: string; detail: string }>
+  ai: OntoAi
+  roles: Record<string, string>
+}
+
+export type OntoListRow = Pick<OntoView, 'id' | 'name' | 'domain' | 'sources' | 'metadata'
+  | 'version' | 'published_at' | 'summary' | 'created_at'>
+
+export interface OntoListResponse {
+  ontologies: OntoListRow[]
+  ai: OntoAi
+  roles: Record<string, string>
+}
+
+export interface OntoBuildRequest {
+  name: string
+  sources: string[]
+  paths: Array<{ path: string; name?: string }>
+  metadata: string[]
+  domain?: string
+  problem?: string
+}
+
+export interface OntoContextResult {
+  changes: Array<Record<string, string>>
+  reply: string
+  method: 'ai' | 'rules'
+  version: number | null
+  ontology: OntoView
+}
+
+export interface OntoFieldEdit {
+  key: string
+  label?: string
+  meaning?: string
+  role?: string
+  unit?: string
+}
+
+export interface OntoUse {
+  ontology: string
+  version: number | null
+  nexus: { url: string; excel: string; tables: string[] }
+  agents: { mcp_url: string; tool: string; arguments: Record<string, string>;
+    claude_code: string; keys: string }
+  files: { json: string; owl: string; shacl: string; git_zip: string }
+}

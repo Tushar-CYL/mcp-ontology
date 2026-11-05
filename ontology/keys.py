@@ -44,9 +44,46 @@ def candidates(table: Table) -> list[str]:
     return out
 
 
+# Identifier fields of the common enterprise systems. Real exports (SAP
+# especially) name keys this way, and they are often numeric.
+ERP_KEY_NAMES = {
+    "kunnr", "vbeln", "matnr", "lifnr", "belnr", "ebeln", "aufnr", "pernr",
+    "bukrs", "werks", "posnr", "vbelv", "kostl", "prctr", "saknr", "hkont",
+}
+_NAME_LIKE = ("name", "desc", "title", "label", "text", "comment", "note",
+              "address", "street", "email", "phone", "city")
+
+
 def _looks_like_id(name: str) -> bool:
     low = name.lower()
-    return low == "id" or low.endswith(("_id", "id", "_key", "_code", "_no"))
+    return (low == "id" or low in ERP_KEY_NAMES
+            or low.endswith(("_id", "id", "_key", "_code", "_no", "_nr",
+                             "_number", "_ref", "ref", "_num")))
+
+
+def _looks_like_name(name: str) -> bool:
+    low = name.lower()
+    return any(token in low for token in _NAME_LIKE)
+
+
+_ID_SUFFIXES = ("_id", "_ref", "_no", "_nr", "_number", "_num", "_key", "_code")
+
+
+def _abbreviates(column: str, stem: str) -> bool:
+    """inv_id names an invoice, acct_id an account, po_no a purchase order:
+    the part before the id suffix abbreviates the table's own name (same
+    first letter, letters in order). order_ref in invoices does not."""
+    for suffix in _ID_SUFFIXES:
+        if column.endswith(suffix):
+            prefix = column[: -len(suffix)].replace("_", "")
+            break
+    else:
+        return False
+    target = stem.lower().replace("_", "")
+    if len(prefix) < 2 or not target or prefix[0] != target[0]:
+        return False
+    rest = iter(target)
+    return all(ch in rest for ch in prefix)
 
 
 def pick_key(table: Table) -> str | None:
@@ -62,17 +99,32 @@ def pick_key(table: Table) -> str | None:
 
     stem = _stem(table.name)
 
+    order = [c.name for c in table.columns]
+
     def rank(name: str) -> tuple:
         low = name.lower()
-        return (
-            0 if low == f"{stem}_id" else            # customers.customer_id
-            1 if low == "id" else                    # things.id
-            2 if low == f"{stem}_key" else
-            3 if low.endswith("_id") else
-            4 if _looks_like_id(low) else 5,
-            len(low),                                # shorter wins ties
-            low,                                     # then alphabetical, so
-        )                                            # the answer is stable
+        # A unique name or description is an attribute, never the identity;
+        # an attribute ending in _id (tax_id) ranks below a real identifier.
+        if _looks_like_name(low) and not _looks_like_id(low):
+            klass = 7
+        elif low == f"{stem}_id" or _abbreviates(low, stem):
+            klass = 0                                # customer_id, inv_id
+        elif low == "id":
+            klass = 1                                # things.id
+        elif low == f"{stem}_key":
+            klass = 2
+        elif low in ERP_KEY_NAMES or low.endswith(("_ref", "_no", "_nr",
+                                                   "_number", "_num")):
+            klass = 3                                # KUNNR, billing_ref
+        elif low.endswith("_id"):
+            klass = 4
+        elif _looks_like_id(low):
+            klass = 5
+        else:
+            klass = 6
+        return (klass,
+                order.index(name) if name in order else 99,   # earlier column
+                len(low), low)                                # stable ties
 
     return sorted(cands, key=rank)[0]
 

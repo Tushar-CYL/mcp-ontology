@@ -29,6 +29,8 @@ from __future__ import annotations
 
 import re
 
+from ontology.words import segment
+
 from knowledge_graph.build import qi, table_ref
 from semantic import definitions as metric_defs
 
@@ -63,19 +65,8 @@ _PREFIX = {"i", "t", "v", "f", "d", "dim", "fact", "stg", "tbl", "vw"}
 _ID_LIKE = re.compile(r"(^|_)(id|key|no|num|nr|number|code|item|position|pos|"
                       r"line|seq|index|year|month|day|zip|postcode)$", re.I)
 _ML_SPLIT = re.compile(r"_(train|test|val|valid|validation|dev)$", re.I)
-# Business words for splitting run-together names (SAP "salesdocumentitem").
-_VOCAB = sorted({
-    "sales", "sale", "document", "documents", "item", "items", "customer",
-    "customers", "address", "addr", "org", "organization", "name", "postal",
-    "order", "orders", "line", "lines", "product", "products", "invoice",
-    "payment", "payments", "shipping", "ship", "delivery", "material",
-    "vendor", "supplier", "account", "accounts", "billing", "bill", "party",
-    "plant", "region", "country", "company", "code", "group", "office",
-    "channel", "division", "type", "category", "price", "amount", "quantity",
-    "currency", "condition", "terms", "creation", "date", "time", "joined",
-    "tables", "table", "partner", "contract", "purchase", "stock", "store",
-    "employee", "user", "event", "transaction", "transactions", "header",
-    "position", "status", "rep", "representation"}, key=len, reverse=True)
+# Run-together names (SAP "salesdocumentitem") are split by the shared
+# vocabulary in ontology/words.py, so the ontology and semantic layers agree.
 _REF_HINT = ("party", "customer", "product", "material", "vendor", "supplier",
              "user", "account", "client", "employee", "store", "sku")
 
@@ -87,28 +78,7 @@ def _is_technical(name: str) -> bool:
         or low.startswith("unnamed")
 
 
-def _segment(word: str) -> list[str]:
-    """Split a run-together word on business vocabulary, longest match
-    first; keep it whole unless at least 80% of it is recognised."""
-    parts: list[str] = []
-    unknown = ""
-    known = 0
-    i = 0
-    while i < len(word):
-        match = next((v for v in _VOCAB if word.startswith(v, i)), None)
-        if match:
-            if unknown:
-                parts.append(unknown)
-                unknown = ""
-            parts.append(match)
-            known += len(match)
-            i += len(match)
-        else:
-            unknown += word[i]
-            i += 1
-    if unknown:
-        parts.append(unknown)
-    return parts if known >= 0.8 * len(word) else [word]
+_segment = segment
 
 
 def _core_words(table: str) -> list[str]:
