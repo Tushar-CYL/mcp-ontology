@@ -18,6 +18,8 @@ the graph rewindable. History is never overwritten.
 
 from __future__ import annotations
 
+import os
+
 import json
 import threading
 from pathlib import Path
@@ -868,11 +870,61 @@ def _display_label(props: dict, key: str) -> str:
     return _short_key(key)
 
 
+def _machine() -> tuple[int, int]:
+    """Total RAM in bytes and CPU cores, without extra dependencies."""
+    cores = os.cpu_count() or 4
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            class _Status(ctypes.Structure):
+                _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong),
+                            ("total", ctypes.c_ulonglong), ("avail", ctypes.c_ulonglong),
+                            ("pt", ctypes.c_ulonglong), ("pa", ctypes.c_ulonglong),
+                            ("vt", ctypes.c_ulonglong), ("va", ctypes.c_ulonglong),
+                            ("ve", ctypes.c_ulonglong)]
+            status = _Status()
+            status.length = ctypes.sizeof(_Status)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
+            return int(status.total), cores
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES"), cores
+    except Exception:                                  # noqa: BLE001 - be safe
+        return 8 * 1024 ** 3, cores
+
+
+def memory_settings(total_bytes: int | None = None, cores: int | None = None) -> dict:
+    """DuckDB limits that leave room for the OS, the browser and Python.
+
+    DuckDB defaults to 80% of RAM, which on an 8 GB laptop means a big build
+    fails instead of spilling to disk. Half of RAM (at least 1 GB) and at
+    most 8 threads; STRATA_DUCKDB_MEMORY / STRATA_DUCKDB_THREADS override.
+    """
+    if total_bytes is None or cores is None:
+        total_bytes, cores = _machine()
+    gb = max(1, int(total_bytes / 1024 ** 3 / 2 + 0.5))
+    return {
+        "memory_limit": os.environ.get("STRATA_DUCKDB_MEMORY") or f"{gb}GB",
+        "threads": int(os.environ.get("STRATA_DUCKDB_THREADS")
+                       or min(8, max(1, cores // 2))),
+    }
+
+
 def open_graph(path: str | Path | None = None) -> Graph:
-    """Open or create a graph. No path means in-memory, for tests."""
+    """Open or create a graph. No path means in-memory, for tests.
+
+    File graphs spill to `<file>.tmp` when a build needs more memory than
+    the limit, rather than failing with OutOfMemory.
+    """
     import duckdb
     if path is None:
-        return Graph(duckdb.connect(":memory:"))
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return Graph(duckdb.connect(str(p)))
+        con = duckdb.connect(":memory:")
+    else:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        con = duckdb.connect(str(p))
+        con.execute("SET temp_directory = ?", [str(p) + ".tmp"])
+    settings = memory_settings()
+    con.execute(f"SET memory_limit = '{settings['memory_limit']}'")
+    con.execute(f"SET threads = {int(settings['threads'])}")
+    con.execute("SET preserve_insertion_order = false")
+    return Graph(con)

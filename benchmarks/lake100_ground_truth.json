@@ -2167,6 +2167,14 @@
     },
     {
       "domain_table": "finance_po_lines",
+      "column": "po_id",
+      "range_table": "finance_purchase_orders",
+      "domain_class": "FinancePoLine",
+      "range_class": "FinancePurchaseOrder",
+      "provenance": "derived"
+    },
+    {
+      "domain_table": "finance_po_lines",
       "column": "product_id",
       "range_table": "erp_products",
       "domain_class": "FinancePoLine",

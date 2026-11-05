@@ -4,6 +4,7 @@ import type { HealthResponse, SourceSummary } from '../api/types'
 import { SourceContext, type SourceApi } from '../context/SourceContext'
 
 const STORAGE_KEY = 'middle-layer:selected-source'
+const HEALTH_RETRY_MS = 3_000
 const HEALTH_POLL_MS = 45_000
 
 function readStoredSource(): string | null {
@@ -40,22 +41,30 @@ export function SourceProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     setLoading(true)
-    try {
-      const listed = await api.listSources()
-      if (!mounted.current) return
-      applySources(listed.sources)
-      setError(null)
+    // Health is checked even when the source list fails: that failure is
+    // exactly when the top bar must say "API unreachable", not "unknown".
+    const checkHealth = async () => {
       try {
         const healthResult = await api.health()
         if (!mounted.current) return
         setHealth(healthResult)
         setHealthError(null)
       } catch (cause) {
-        if (!isAbortError(cause)) setHealthError(cause)
+        if (mounted.current && !isAbortError(cause)) {
+          setHealth(null)
+          setHealthError(cause)
+        }
       }
+    }
+    try {
+      const listed = await api.listSources()
+      if (!mounted.current) return
+      applySources(listed.sources)
+      setError(null)
     } catch (cause) {
       if (!isAbortError(cause)) setError(cause)
     } finally {
+      await checkHealth()
       if (mounted.current) setLoading(false)
     }
   }, [applySources])
@@ -79,9 +88,11 @@ export function SourceProvider({ children }: { children: ReactNode }) {
           if (!mounted.current || isAbortError(cause)) return
           setHealthError(cause)
         })
-    }, HEALTH_POLL_MS)
+    // While the API is unreachable, look again every few seconds so the top
+    // bar turns green soon after the server is back.
+    }, healthError ? HEALTH_RETRY_MS : HEALTH_POLL_MS)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [healthError])
 
   useEffect(() => {
     try {

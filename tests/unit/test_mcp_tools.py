@@ -20,6 +20,9 @@ EXPECTED_TOOLS = {
     "list_metrics", "get_metric", "evaluate_metric", "validate_sql",  # semantic
     "check_answerable", "get_context", "explain_citation",    # context
     "propose_change",                                         # steward only
+    "get_ontology",                                                   # simple flow
+    "list_concepts", "get_concept", "map_column", "resolve_entity",   # enterprise
+    "get_contract", "validate_rules", "ontology_version",             # ontology
 }
 LAYER_TAG = {
     "list_sources": "[General]", "check_readiness": "[General]",
@@ -30,6 +33,8 @@ LAYER_TAG = {
     "validate_sql": "[Semantic]", "check_answerable": "[Context]",
     "get_context": "[Context]", "explain_citation": "[Context]",
     "propose_change": "[Steward]",
+    **dict.fromkeys(["get_ontology", "list_concepts", "get_concept", "map_column", "resolve_entity",
+                     "get_contract", "validate_rules", "ontology_version"], "[Ontology]"),
 }
 
 

@@ -10,3 +10,8 @@ __pycache__/
 # local test artifacts
 .playwright-mcp/
 .pytest_semantic.log
+*.log
+
+# screenshots pasted while working, and internal notes
+/image*.png
+/data.txt

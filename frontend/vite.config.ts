@@ -10,7 +10,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        // STRATA_API points a second dev server at another API (e.g. a test one).
+        target: process.env.STRATA_API ?? 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
     },

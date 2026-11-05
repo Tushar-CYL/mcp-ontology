@@ -485,9 +485,10 @@ def _nodes(graph, schema: Schema, cls, code: int, source: str, slug: str,
              ", ".join(f"{ql(c)}: {qi(c)}" for c in prop_cols) + "})") \
         if prop_cols else "NULL"
 
-    # LEFT JOIN + IS NULL, not ON CONFLICT DO NOTHING: an anti-join is a
-    # single hash build; ON CONFLICT probes the primary-key index once per row
-    # and each insert got slower as the table filled.
+    # No check against existing nodes: _build cleared this source first and
+    # row_number() keeps one row per key. The old anti-join against EVERY node
+    # in the graph (other sources included) ran DuckDB out of memory in a
+    # shared graph, and ON CONFLICT probes the index row by row.
     sql = f"""
     INSERT INTO nodes (id, class, nkey, source_id, props)
     SELECT {_node_id(code, source, 'q.k')}, {code}, q.k, {ql(source)}, q.p
@@ -496,9 +497,7 @@ def _nodes(graph, schema: Schema, cls, code: int, source: str, slug: str,
                row_number() OVER (PARTITION BY CAST({key} AS VARCHAR)) AS rn
         FROM {tbl}
     ) q
-    LEFT JOIN nodes ex ON ex.source_id = {ql(source)}
-                      AND ex.class = {code} AND ex.nkey = q.k
-    WHERE q.rn = 1 AND q.k IS NOT NULL AND q.k <> '' AND ex.id IS NULL"""
+    WHERE q.rn = 1 AND q.k IS NOT NULL AND q.k <> ''"""
     if echo:
         print(sql)
     before = graph.one("SELECT count(*) FROM nodes") or 0
@@ -537,9 +536,12 @@ def _edges(graph, schema: Schema, onto: Ontology, rel, code: int,
     dst_key = f"CAST({qi(rel.column)} AS VARCHAR)"
 
     # Note the joins: ON n.nkey = ..., never ON n.id = node_id(...).
+    # DISTINCT, not an anti-join against all edges: this source's edges were
+    # cleared at the start of the build; only repeats within the source
+    # itself (a duplicated row) can collide, and DISTINCT removes those.
     sql = f"""
     INSERT INTO edges (src, rel, dst, source_id, valid_from, valid_to)
-    SELECT a.id, {code}, b.id, {ql(source)}, q.vf, NULL
+    SELECT DISTINCT a.id, {code}, b.id, {ql(source)}, q.vf, NULL
     FROM (
         SELECT {src_key} AS sk, {dst_key} AS dk, {vfrom} AS vf
         FROM {tbl}
@@ -550,10 +552,7 @@ def _edges(graph, schema: Schema, onto: Ontology, rel, code: int,
                 AND a.nkey = q.sk
     JOIN nodes b ON b.source_id = {ql(source)}
                 AND b.class = {class_codes[rel.range]}
-                AND b.nkey = q.dk
-    LEFT JOIN edges ex ON ex.src = a.id AND ex.rel = {code}
-                      AND ex.dst = b.id AND ex.valid_from = q.vf
-    WHERE ex.src IS NULL"""
+                AND b.nkey = q.dk"""
     if echo:
         print(sql)
 
@@ -621,22 +620,26 @@ def _triple_edges(graph, schema: Schema, onto, source: str, slug: str,
                     AND t.nkey = CAST(q.tail AS VARCHAR)""",
         [source, entity_code, source, entity_code])
 
+    # One insert for every predicate. The source's edges were cleared at the
+    # start of this build and triple_stage is DISTINCT, so no duplicate can
+    # exist; the old per-predicate anti-join against ALL edges in the graph
+    # (other sources included) ran out of memory in a shared graph.
+    codes = [(rel.source_name or rel.name, relation_codes[rel.name])
+             for rel in onto.relations.values() if getattr(rel, "custom", False)]
     made = 0
-    for rel in onto.relations.values():
-        if not getattr(rel, "custom", False):
-            continue
-        code = relation_codes[rel.name]
-        before = graph.one("SELECT count(*) FROM edges") or 0
+    if codes:
+        graph.con.execute("DROP TABLE IF EXISTS triple_codes")
+        graph.con.execute("CREATE TEMP TABLE triple_codes (relname VARCHAR, code INTEGER)")
+        graph.con.executemany("INSERT INTO triple_codes VALUES (?, ?)", codes)
+        before = graph.one("SELECT count(*) FROM edges WHERE source_id = ?", [source]) or 0
         graph.con.execute("""
             INSERT INTO edges(src, rel, dst, source_id, valid_from, valid_to)
-            SELECT s.src, ?, s.dst, ?, '-infinity'::TIMESTAMP, NULL
-            FROM triple_stage s
-            LEFT JOIN edges ex ON ex.src = s.src AND ex.rel = ?
-                              AND ex.dst = s.dst
-                              AND ex.valid_from = '-infinity'::TIMESTAMP
-            WHERE ex.src IS NULL AND s.relname = ?""",
-            [code, source, code, rel.source_name or rel.name])
-        made += (graph.one("SELECT count(*) FROM edges") or 0) - before
+            SELECT DISTINCT s.src, c.code, s.dst, ?, '-infinity'::TIMESTAMP, NULL
+            FROM triple_stage s JOIN triple_codes c ON c.relname = s.relname""",
+            [source])
+        made = (graph.one("SELECT count(*) FROM edges WHERE source_id = ?",
+                          [source]) or 0) - before
+        graph.con.execute("DROP TABLE IF EXISTS triple_codes")
 
     # Rows that could not become an edge: unknown relation id, missing head or
     # tail node. Counted once, never silently dropped.

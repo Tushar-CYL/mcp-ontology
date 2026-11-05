@@ -133,7 +133,7 @@ function ContextView({ source }: { source: SourceSummary }) {
     }
   }
 
-  const facts = result?.facts ?? []
+  const facts = useMemo(() => result?.facts ?? [], [result])
   const dropped = result?.dropped ?? []
   const groups = useMemo(() => {
     const map = new Map<string, ContextFact[]>()
