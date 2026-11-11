@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, List, Plus } from 'lucide-react'
+import { ArrowLeft, Layers, List, Plus, SearchX } from 'lucide-react'
 import { api } from '../../api/client'
 import type { OntoListRow, OntoView } from '../../api/types'
 import { Button } from '../../components/Button'
+import { EmptyState } from '../../components/EmptyState'
 import { ErrorState } from '../../components/ErrorState'
 import { LoadingState } from '../../components/LoadingState'
 import { PageHeader } from '../../components/PageHeader'
@@ -27,17 +28,39 @@ export function SimpleOntology() {
   const list = useAsync((signal) => api.ontoList(signal), [oid])
   const creating = oid === 'new'
   const listing = oid === 'all'
+  // Ids deleted in this session. The list refreshes in the background, so
+  // right after a delete it still names the deleted ontology; without this
+  // the redirect below opened it again and hit a 404.
+  const deleted = useRef(new Set<string>())
+  const known = (list.data?.ontologies ?? []).filter((o) => !deleted.current.has(o.id))
 
   useEffect(() => {
     if (oid || !list.data) return
-    const latest = [...list.data.ontologies].sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
-    navigate(latest ? `/tools/ontology/${encodeURIComponent(latest.id)}` : '/tools/ontology/new',
-      { replace: true })
-  }, [oid, list.data, navigate])
+    const latest = [...known].sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+    if (latest) navigate(`/tools/ontology/${encodeURIComponent(latest.id)}`, { replace: true })
+    // No ontology yet: stay here and show the empty state below.
+  }, [oid, list.data, navigate])         // eslint-disable-line react-hooks/exhaustive-deps
+
+  const remove = (id: string) => {
+    deleted.current.add(id)
+    list.reload()
+    navigate('/tools/ontology', { replace: true })
+  }
 
   if (list.initialLoading && !list.data) return <div className="page"><LoadingState label="Loading" /></div>
   if (list.error) return <div className="page"><ErrorState error={list.error} onRetry={list.reload} /></div>
-  if (!oid) return <div className="page"><LoadingState label="Loading" /></div>
+  if (!oid) {
+    if (known.length) return <div className="page"><LoadingState label="Opening your ontology" /></div>
+    return (
+      <div className="page">
+        <PageHeader eyebrow="Ontology" title="Ontology" />
+        <EmptyState icon={Layers} title="No ontology yet"
+          description="Connect your data and Strata builds the first one: the business things, every field in plain words, and how they link."
+          action={<Button variant="primary" icon={<Plus size={15} />}
+            onClick={() => navigate('/tools/ontology/new')}>Create your first ontology</Button>} />
+      </div>
+    )
+  }
 
   if (listing) {
     const rows = list.data?.ontologies ?? []
@@ -47,8 +70,9 @@ export function SimpleOntology() {
           description={`${rows.length} ontolog${rows.length === 1 ? 'y' : 'ies'}. Open one, or delete what you no longer need.`}
           actions={<Button variant="primary" size="sm" icon={<Plus size={14} />}
             onClick={() => navigate('/tools/ontology/new')}>New ontology</Button>} />
-        <OntologyTable rows={rows} onOpen={(id) => navigate(`/tools/ontology/${encodeURIComponent(id)}`)}
-          onDeleted={list.reload} />
+        <OntologyTable rows={rows.filter((o) => !deleted.current.has(o.id))}
+          onOpen={(id) => navigate(`/tools/ontology/${encodeURIComponent(id)}`)}
+          onDeleted={(id) => { deleted.current.add(id); list.reload() }} />
       </div>
     )
   }
@@ -58,7 +82,7 @@ export function SimpleOntology() {
       <div className="page">
         <PageHeader eyebrow="Ontology" title="New ontology"
           description="Give it any data, plus any metadata you already have. It finds the business things, explains every field in plain words and proves how they link."
-          actions={list.data?.ontologies.length ? (
+          actions={known.length ? (
             <Button variant="ghost" icon={<ArrowLeft size={15} />} onClick={() => navigate(-1)}>Back</Button>) : null} />
         <Connect ai={list.data?.ai} onBuilt={(id) => navigate(`/tools/ontology/${encodeURIComponent(id)}`)} />
       </div>
@@ -69,12 +93,12 @@ export function SimpleOntology() {
   const tab: Tab = raw === 'map' || raw === 'use' ? raw : 'overview'
   return (
     <Workspace key={oid} oid={oid} tab={tab}
-      others={list.data?.ontologies.map((o) => ({ id: o.id, name: o.name })) ?? []}
+      others={known.map((o) => ({ id: o.id, name: o.name }))}
       onTab={(t) => setParams(t === 'overview' ? {} : { tab: t }, { replace: true })}
       onSwitch={(id) => navigate(`/tools/ontology/${encodeURIComponent(id)}`)}
       onNew={() => navigate('/tools/ontology/new')}
       onAll={() => navigate('/tools/ontology/all')}
-      onDeleted={() => { list.reload(); navigate('/tools/ontology', { replace: true }) }} />
+      onDeleted={() => remove(oid)} />
   )
 }
 
@@ -95,7 +119,23 @@ function Workspace({ oid, tab, others, onTab, onSwitch, onNew, onAll, onDeleted 
   useEffect(() => { setFresh(null) }, [state.data])
 
   if (!view && state.initialLoading) return <div className="page"><LoadingState label="Loading the ontology" /></div>
-  if (!view) return <div className="page"><ErrorState error={state.error} onRetry={state.reload} /></div>
+  if (!view) {
+    const status = (state.error as { status?: number } | null)?.status
+    if (status === 404) {
+      return (
+        <div className="page">
+          <PageHeader eyebrow="Ontology" title="Ontology" />
+          <EmptyState icon={SearchX} title="This ontology no longer exists"
+            description={<>There is no ontology called <code>{oid}</code>. It may have been deleted, or the link is old.</>}
+            action={<div className="onto-row">
+              {others.length ? <Button variant="secondary" icon={<List size={14} />} onClick={onAll}>All ontologies</Button> : null}
+              <Button variant="primary" icon={<Plus size={14} />} onClick={onNew}>New ontology</Button>
+            </div>} />
+        </div>
+      )
+    }
+    return <div className="page"><ErrorState error={state.error} onRetry={state.reload} /></div>
+  }
   const updated = timeAgo(view.published_at)
   return (
     <div className="page">
@@ -123,7 +163,7 @@ function Workspace({ oid, tab, others, onTab, onSwitch, onNew, onAll, onDeleted 
 function OntologyTable({ rows, onOpen, onDeleted }: {
   rows: OntoListRow[]
   onOpen: (id: string) => void
-  onDeleted: () => void
+  onDeleted: (id: string) => void
 }) {
   if (!rows.length) {
     return <div className="onto-empty">No ontologies yet. Create one with <strong>New ontology</strong>.</div>
@@ -146,7 +186,7 @@ function OntologyTable({ rows, onOpen, onDeleted }: {
           <span>{timeAgo(o.published_at ?? o.created_at)}</span>
           <span className="onto-table__actions">
             <Button size="sm" variant="secondary" onClick={() => onOpen(o.id)}>Open</Button>
-            <DeleteOntology id={o.id} name={o.name} onDeleted={onDeleted} compact />
+            <DeleteOntology id={o.id} name={o.name} onDeleted={() => onDeleted(o.id)} compact />
           </span>
         </div>
       ))}
