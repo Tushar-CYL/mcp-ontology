@@ -23,7 +23,7 @@ PRESETS: dict[str, dict] = {
                "thing, how they link, which metrics are approved.",
         "layers": ["ontology", "semantic"],
         "tools": [*_GENERAL, "list_entities", "describe_table", "list_metrics",
-                  "get_ontology", "list_concepts", "get_concept", "map_column", "ontology_version"],
+                  "get_ontology", "list_concepts", "get_concept", "map_column", "ontology_version", "ask_question"],
         "guardrails": ["Reads metadata only; never returns data rows or "
                        "numbers", "Personal-data columns are flagged"],
         "output": "Plain explanation of the entity or source, its links and "
@@ -75,7 +75,7 @@ PRESETS: dict[str, dict] = {
                   "get_metric", "evaluate_metric", "validate_sql",
                   "check_answerable", "get_context", "explain_citation",
                   "get_ontology", "list_concepts", "get_concept", "map_column", "resolve_entity",
-                  "get_contract", "validate_rules", "ontology_version"],
+                  "get_contract", "validate_rules", "ontology_version", "ask_question"],
         "guardrails": ["Every number comes from an approved metric",
                        "Answers only when the evidence is sufficient; says "
                        "so plainly otherwise", "Read-only"],
@@ -111,7 +111,7 @@ PRESETS: dict[str, dict] = {
         "tools": ["list_sources", "search", "list_entities", "list_metrics",
                   "get_metric", "propose_change", "get_ontology", "list_concepts", "get_concept",
                   "map_column", "resolve_entity", "get_contract", "validate_rules",
-                  "ontology_version"],
+                  "ontology_version", "ask_question"],
         "guardrails": ["Proposal only: a person must approve every change",
                        "Every proposal is audited"],
         "output": "The proposal as filed, waiting for approval.",

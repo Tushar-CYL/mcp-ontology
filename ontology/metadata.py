@@ -7,6 +7,8 @@ Three shapes cover what clients usually hand over:
   relationships the model declares;
 * a **dbt project file** (``schema.yml`` / ``models.yml``): model and column
   descriptions, and ``relationships`` tests as declared links;
+* an **Apache Ossie** model (YAML with `version`, `name`, `datasets`), the
+  interchange format other semantic layers write (see ``ontology.ossie``);
 * a **data dictionary** (CSV or Excel) with ``table``, ``column`` and
   ``description`` columns (``label`` and ``unit`` optional).
 
@@ -247,6 +249,9 @@ def parse(path: str | Path) -> dict:
             data = yaml.safe_load(p.read_text(encoding="utf-8"))
         except yaml.YAMLError as exc:
             raise MetadataError(f"{p.name} is not valid YAML: {exc}") from exc
+        from ontology import ossie
+        if ossie.is_ossie(data):
+            return ossie.parse_ossie(data, p)
         return parse_dbt(data or {}, p)
     if suffix in DICTIONARY_FILES:
         return parse_dictionary(p)

@@ -68,6 +68,11 @@ describe('simple ontology client', () => {
     await expect(api.ontoList()).rejects.toThrow('warming up')
   })
 
+  it('explains a 405 as an older server (the web app is newer than the API)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('Method Not Allowed', { status: 405 })))
+    await expect(api.ontoAsk('p', 'how many?')).rejects.toThrow('older version')
+  })
+
   it('builds the Excel download link', () => {
     expect(api.ontoExcelUrl('my plant')).toMatch(/\/onto\/my%20plant\/excel$/)
   })

@@ -325,3 +325,22 @@ def test_findings_speak_in_thing_names(tmp_path):
     oid = simple.create_and_build(layer, "CRM", ["crm"])["ontology"]
     for f in simple.view(layer.graph, oid)["findings"]:
         assert "crm.customers" not in f["detail"] and "value(s)" not in f["detail"]
+
+
+def test_the_confirmed_share_travels_with_every_output(tmp_path):
+    from api import mcp_server
+    layer = load(tmp_path, ["iot"])
+    oid = simple.create_and_build(layer, "Sensors", ["iot"], client=FakeAI(
+        lies={"status_code": "identifier"}))["ontology"]
+    v = simple.view(layer.graph, oid)
+    checks = v["summary"]["checks"]
+    expected = round(100 * checks["verified"] / sum(checks.values()))
+    assert v["summary"]["confirmed_pct"] == expected and 0 < expected < 100
+    assert simple.for_excel(layer.graph, oid)["ontology"]["confirmed_pct"] == expected
+    reply = mcp_server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                               "params": {"name": "get_ontology", "arguments": {"ontology": oid}}},
+                              layer)
+    assert json.loads(reply["result"]["content"][0]["text"])["confirmed_pct"] == expected
+    blob = simple.to_xlsx(layer.graph, oid)
+    about = zipfile.ZipFile(io.BytesIO(blob)).read("xl/worksheets/sheet4.xml").decode()
+    assert f"{expected}% of fields" in about

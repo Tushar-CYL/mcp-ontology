@@ -6,7 +6,7 @@ import {
   TriangleAlert, X,
 } from 'lucide-react'
 import { api, describeError } from '../../api/client'
-import type { EoJob, OntoCheck, OntoField, OntoThing, OntoView as View } from '../../api/types'
+import type { EoJob, OntoAsk, OntoCheck, OntoField, OntoThing, OntoView as View } from '../../api/types'
 import { Button } from '../../components/Button'
 import { Callout } from '../../components/Callout'
 import { Card } from '../../components/Card'
@@ -21,7 +21,7 @@ import { DeleteOntology } from './DeleteOntology'
 import { OntoMap } from './OntoMap'
 import { JobLog } from './shared'
 
-export type Tab = 'overview' | 'map' | 'use'
+export type Tab = 'overview' | 'map' | 'ask' | 'use'
 
 const CHECK_ICON: Record<OntoCheck, typeof CircleCheck> = {
   verified: CircleCheck, conflict: TriangleAlert, unchecked: CircleDashed,
@@ -84,7 +84,8 @@ export function OntologyView({ view, tab, onTab, onChange, onDeleted }: {
       ) : null}
 
       <nav className="onto-tabs" role="tablist" aria-label="Views">
-        {([['overview', 'Overview', Table2], ['map', 'Map', Share2], ['use', 'Use it', ArrowRight]] as const)
+        {([['overview', 'Overview', Table2], ['map', 'Map', Share2], ['ask', 'Ask', MessageSquarePlus],
+          ['use', 'Use it', ArrowRight]] as const)
           .map(([id, label, Icon]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id}
               className={cx('onto-tab', tab === id && 'is-active')} onClick={() => onTab(id)}>
@@ -101,6 +102,7 @@ export function OntologyView({ view, tab, onTab, onChange, onDeleted }: {
         <OntoMap view={view} selected={view.things.find((t) => t.key === selected)?.name}
           onOpen={(key) => { setSelected(key); onTab('overview') }} />
       ) : null}
+      {tab === 'ask' ? <AskPanel view={view} /> : null}
       {tab === 'use' ? <UseIt view={view} /> : null}
     </div>
   )
@@ -447,6 +449,116 @@ function ContextBox({ view, onChange }: { view: View; onChange: (next?: View) =>
   )
 }
 
+/* ---------------------------------------------------------------------- ask */
+const ASK_EXAMPLES = ['How many records per status?', 'Top 5 by total amount', 'Average per month']
+
+type Cell = string | number | boolean | null
+
+function fmtCell(v: Cell): string {
+  if (v === null) return ''
+  if (typeof v === 'number') {
+    return Number.isInteger(v) ? formatCount(v) : v.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  }
+  return String(v)
+}
+
+function AskPanel({ view }: { view: View }) {
+  const [question, setQuestion] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<OntoAsk | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const send = async (q: string) => {
+    if (!q.trim() || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      setResult(await api.ontoAsk(view.id, q))
+    } catch (e) {
+      setError(describeError(e).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="onto-ask">
+      <section className="onto-ask__box">
+        <h3><MessageSquarePlus size={16} aria-hidden="true" /> Ask a question</h3>
+        <p>Plain words. The AI writes one read-only query from the published ontology; it is checked, then run. Every number comes from your data.</p>
+        <div className="onto-ask__row">
+          <input className="input" value={question} placeholder="e.g. how many orders per status?"
+            aria-label="Question" onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void send(question) }} />
+          <Button variant="primary" icon={<Send size={14} />} loading={busy} disabled={!question.trim()}
+            onClick={() => send(question)}>Ask</Button>
+        </div>
+        {!view.ai.configured ? <p className="onto-ask__warn">No AI model is configured: a question returns the tables and joins to use, not an answer.</p> : null}
+        <div className="onto-context__examples">
+          {ASK_EXAMPLES.map((x) => <button key={x} type="button" onClick={() => { setQuestion(x); void send(x) }}>{x}</button>)}
+        </div>
+        {error ? <Callout tone="danger" title="Could not ask">{error}</Callout> : null}
+      </section>
+      {result ? <AskResult r={result} /> : null}
+    </div>
+  )
+}
+
+function AskResult({ r }: { r: OntoAsk }) {
+  const coverage = Math.round(r.coverage * 100)
+  return (
+    <section className="onto-card onto-ask__result" aria-label="Answer">
+      <header className="onto-card__head">
+        <div className="onto-card__title"><div>
+          <h2>{r.answerable ? r.explanation || 'Answer' : 'Not answered'}</h2>
+          <p>{r.note}</p>
+        </div></div>
+      </header>
+      <dl className="onto-facts">
+        <div><dt>Things used</dt><dd>{r.things.join(', ') || '—'}</dd></div>
+        <div><dt>Question covered</dt><dd>{coverage}%{r.unknown_words.length ? ` (unknown: ${r.unknown_words.join(', ')})` : ''}</dd></div>
+        {r.answerable ? <div><dt>Rows</dt><dd>{formatCount(r.row_count)}{r.truncated ? '+' : ''}{r.seconds != null ? ` · ${r.seconds}s` : ''}</dd></div> : null}
+        <div><dt>Version</dt><dd>v{r.version}{r.repaired ? ' · query repaired once' : ''}</dd></div>
+      </dl>
+      {r.answerable && r.columns.length ? (
+        <div className="table-scroll onto-ask__table">
+          <table className="table table--dense">
+            <thead><tr>{r.columns.map((c) => <th key={c} scope="col">{c}</th>)}</tr></thead>
+            <tbody>
+              {r.rows.map((row, i) => (
+                <tr key={i}>{row.map((v, j) => <td key={j} className={typeof v === 'number' ? 'num' : ''}>{fmtCell(v)}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {r.fields_used.length ? (
+        <div className="onto-ask__fields">
+          <h3>Fields it used</h3>
+          <ul>
+            {r.fields_used.map((f) => (
+              <li key={f.column}>
+                <span className={`onto-check onto-check--${f.check}`}>{CHECK[f.check].label}</span>
+                <strong>{f.label}</strong>{f.unit ? <span className="onto-pill onto-pill--unit">{f.unit}</span> : null}
+                <code>{f.column}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {r.sql ? (
+        <details className="onto-ask__sql">
+          <summary>The SQL that ran</summary>
+          <pre><code>{r.sql}</code></pre>
+        </details>
+      ) : null}
+      {!r.answerable && r.checks.some((c) => !c.passed) ? (
+        <ul className="onto-bullets onto-ask__checks">
+          {r.checks.filter((c) => !c.passed).map((c) => <li key={c.name}><strong>{c.name}:</strong> {c.detail}</li>)}
+        </ul>
+      ) : null}
+    </section>
+  )
+}
+
 /* ------------------------------------------------------------------- use it */
 function CopyLine({ label, value }: { label: string; value: string }) {
   const toast = useToast()
@@ -497,6 +609,7 @@ function UseIt({ view }: { view: View }) {
         <p>Standard formats for other tools and for your Git repository.</p>
         <ul className="onto-use__files">
           <li><a href={u.files.json} target="_blank" rel="noreferrer"><FileJson size={15} /> JSON</a><span>Same tables as Nexus</span></li>
+          <li><a href={u.files.ossie}><FileJson size={15} /> Apache Ossie</a><span>Semantic-layer interchange (NVIDIA, Snowflake…)</span></li>
           <li><a href={u.files.owl} target="_blank" rel="noreferrer"><Share2 size={15} /> OWL / Turtle</a><span>Standard ontology format</span></li>
           <li><a href={u.files.shacl} target="_blank" rel="noreferrer"><CircleCheck size={15} /> SHACL</a><span>Data quality rules</span></li>
           <li><a href={u.files.git_zip}><GitBranch size={15} /> Git folder</a><span>Ontology as code (.zip)</span></li>

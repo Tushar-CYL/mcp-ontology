@@ -90,7 +90,7 @@ export function SimpleOntology() {
   }
 
   const raw = params.get('tab')
-  const tab: Tab = raw === 'map' || raw === 'use' ? raw : 'overview'
+  const tab: Tab = raw === 'map' || raw === 'use' || raw === 'ask' ? raw : 'overview'
   return (
     <Workspace key={oid} oid={oid} tab={tab}
       others={known.map((o) => ({ id: o.id, name: o.name }))}

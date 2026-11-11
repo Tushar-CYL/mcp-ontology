@@ -359,6 +359,12 @@ def _link_label(frm: str, to: str, cardinality: str | None, verb: str | None = N
     return f"Each {frm} belongs to one {to} (one {to} can have many)"
 
 
+def confirmed_pct(counts: dict) -> int:
+    """Share of fields whose meaning the data confirmed, as a whole percent."""
+    total = sum(counts.values())
+    return round(100 * counts.get("verified", 0) / total) if total else 0
+
+
 def view(graph, ontology_id: str, version: int | None = None,
          published: bool = False) -> dict:
     """The ontology in plain words, for the screen, Nexus and agents.
@@ -480,7 +486,10 @@ def view(graph, ontology_id: str, version: int | None = None,
         "published_at": versions[-1]["published_at"] if versions else None,
         "built": last or None,
         "summary": {"things": len(things), "fields": sum(len(t["fields"]) for t in things),
-                    "links": len(links), "checks": counts, "by": by_count},
+                    "links": len(links), "checks": counts, "by": by_count,
+                    # The one number the pitch rests on: how much of this
+                    # ontology the data itself confirmed (not the AI's word).
+                    "confirmed_pct": confirmed_pct(counts)},
         "things": sorted(things, key=lambda t: t["name"].lower()),
         "links": links, "hierarchies": hierarchies, "calculations": calculations,
         "notes": notes, "findings": findings,
@@ -693,7 +702,9 @@ def for_excel(graph, ontology_id: str, version: int | None = None) -> dict:
     calcs = [{"Thing": c["thing"], "Calculation": c["name"], "Formula": c["expression"],
               "Description": c.get("description", "")} for c in v["calculations"]]
     return {"ontology": {"id": v["id"], "name": v["name"], "version": v["version"],
-                         "published_at": v["published_at"]},
+                         "published_at": v["published_at"],
+                         "confirmed_pct": v["summary"]["confirmed_pct"],
+                         "fields_checked": v["summary"]["checks"]},
             "things": things, "fields": fields, "links": links, "calculations": calcs}
 
 
@@ -706,7 +717,10 @@ def to_xlsx(graph, ontology_id: str, version: int | None = None) -> bytes:
              {"Item": "Published", "Value": o["published_at"]},
              {"Item": "Things", "Value": len(data["things"])},
              {"Item": "Fields", "Value": len(data["fields"])},
-             {"Item": "Links", "Value": len(data["links"])}]
+             {"Item": "Links", "Value": len(data["links"])},
+             {"Item": "Confirmed by the data", "Value": f"{o['confirmed_pct']}% of fields"},
+             {"Item": "Fields where the data disagreed with the AI",
+              "Value": o["fields_checked"].get("conflict", 0)}]
     sheets = [("Things", data["things"]), ("Fields", data["fields"]),
               ("Links", data["links"])]
     if data["calculations"]:

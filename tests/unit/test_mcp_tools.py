@@ -22,7 +22,7 @@ EXPECTED_TOOLS = {
     "propose_change",                                         # steward only
     "get_ontology",                                                   # simple flow
     "list_concepts", "get_concept", "map_column", "resolve_entity",   # enterprise
-    "get_contract", "validate_rules", "ontology_version",             # ontology
+    "get_contract", "validate_rules", "ontology_version", "ask_question",  # ontology
 }
 LAYER_TAG = {
     "list_sources": "[General]", "check_readiness": "[General]",
@@ -34,7 +34,8 @@ LAYER_TAG = {
     "get_context": "[Context]", "explain_citation": "[Context]",
     "propose_change": "[Steward]",
     **dict.fromkeys(["get_ontology", "list_concepts", "get_concept", "map_column", "resolve_entity",
-                     "get_contract", "validate_rules", "ontology_version"], "[Ontology]"),
+                     "get_contract", "validate_rules", "ontology_version", "ask_question"],
+                    "[Ontology]"),
 }
 
 

@@ -30,6 +30,16 @@ A semantic model on its own is enough. Every item it produces is then marked "no
 
 **What the AI sees:** table and column names, profile numbers, and `STRATA_AI_SAMPLES` sample values per column (default 5; `0` sends none). It never sees whole rows. `STRATA_AI=off` turns the AI off, and the engine's names are used instead.
 
+## 2b. Ask a question (the **Ask** tab, or the `ask_question` MCP tool)
+
+Type a business question in plain words. Strata picks the things it is about,
+the AI writes **one read-only SQL query** from them, the query is checked
+(single SELECT, known tables only, no personal-data columns, compiles), run with
+a row and time limit, and the answer is shown with the SQL, the fields it used
+(each with its data check), how much of the question the ontology covered, and
+the ontology version. A failing query is repaired once, then refused honestly.
+Every number comes from running the SQL; the AI never writes an answer.
+
 ## 3. Use it
 
 | Consumer | How |
@@ -37,7 +47,7 @@ A semantic model on its own is enough. Every item it produces is then marked "no
 | **Nexus (Excel add-in)** | `GET /api/onto/{id}/nexus`: JSON with `things`, `fields`, `links` and `calculations`, one row per item, ready for Excel tables. Add `?version=N` to pin a version. |
 | **Excel** | `GET /api/onto/{id}/excel`: a workbook with sheets Things, Fields, Links (Calculations), About. |
 | **Claude / any agent** | MCP at `/mcp`, tool `get_ontology {"ontology": "<id>"}` (optional `"thing"`). The other ontology tools (`get_concept`, `map_column`…) return the same plain meanings. |
-| **Files** | JSON (as for Nexus), OWL/Turtle, SHACL and a Git folder zip (`/api/eo/{id}/export/...`). |
+| **Files** | JSON (as for Nexus), **Apache Ossie YAML** (`/api/onto/{id}/ossie`, the interchange format NVIDIA Auto Ontology and others read), OWL/Turtle, SHACL and a Git folder zip. An Ossie file can also be given as metadata on Connect. |
 
 **For the Nexus team:** a browser-based add-in calls the API from its own web address. Add that address to `MIDDLE_LAYER_ORIGINS` (a comma-separated list) on the Strata server.
 
@@ -59,6 +69,8 @@ A semantic model on its own is enough. Every item it produces is then marked "no
 - `POST /api/onto/{id}/rebuild` rebuilds.
 - `POST /api/onto/{id}/metadata {path}` adds metadata.
 - `POST /api/onto/{id}/context {text}` applies a note.
+- `POST /api/onto/{id}/ask {question, max_rows?, version?}` answers a question (see 2b).
+- `GET /api/onto/{id}/ossie` exports Apache Ossie YAML.
 - `PUT /api/onto/{id}/fields {key, label?, meaning?, role?, unit?}` edits a field.
 - `PUT /api/onto/{id}/things {key, name?, description?}` edits a thing.
 - `DELETE /api/onto/{id}` removes the ontology only, never the data.
