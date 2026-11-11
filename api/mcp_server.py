@@ -45,7 +45,8 @@ INSTRUCTIONS = (
     "receipt rather than inventing numbers. For what a column means, which "
     "records in different systems are the same customer, or which rules the "
     "data breaks, use the published enterprise ontology: get_ontology first "
-    "(every thing and field in plain words), then list_concepts, "
+    "(every thing and field in plain words), ask_question for a number or a list "
+    "computed from the data (it returns the SQL it ran), then list_concepts, "
     "get_concept, map_column, resolve_entity, get_contract, validate_rules, "
     "ontology_version (they read one pinned version). Use search, list_entities and "
     "describe_table for meaning, list_metrics / get_metric / evaluate_metric "
@@ -134,6 +135,16 @@ TOOLS = [
           "The published version in use: number, who published it, notes, "
           "item counts and the version history.",
           dict(_ONTOLOGY)),
+    _tool("Ontology", "ask_question",
+          "Answer a business question from the published ontology: the relevant "
+          "things are picked, the AI writes ONE read-only SQL query from them, it is "
+          "checked (read-only, known tables, no personal data, compiles) and run with "
+          "row and time limits. Returns rows, the SQL, the fields used with their "
+          "data check, coverage of the question, and the ontology version. Every "
+          "value comes from running the SQL, never from the model.",
+          {"question": {"type": "string"},
+           "max_rows": {"type": "integer", "minimum": 1, "maximum": 500},
+           **_ONTOLOGY}, ["question"]),
     # ------------------------------------------------------------ graph
     _tool("Graph", "graph_neighbours",
           "What one entity is linked to, with edge provenance.",
@@ -514,6 +525,8 @@ def _get_ontology(layer, args, scope):
     names = {t["name"] for t in things}
     return {
         "ontology": oid, "name": v["name"], "version": v["version"],
+        "confirmed_pct": v["summary"]["confirmed_pct"],
+        "fields_checked": v["summary"]["checks"],
         "things": [{"name": t["name"], "description": t["description"],
                     "tables": t["tables"], "records": t["records"],
                     "fields": [{"column": f["key"], "label": f["label"],
@@ -582,6 +595,19 @@ def _validate_rules(layer, args, scope):
     return pub.validate_published_rules(layer, oid, version)
 
 
+def _ask_client():
+    """The SQL-writing model; replaced in tests."""
+    from agent.llm import EYQClient
+    return EYQClient()
+
+
+def _ask_question(layer, args, scope):
+    from ontology import ask
+    oid, version = _ontology(layer, args, scope)
+    return ask.ask(layer, oid, str(args.get("question") or ""), client=_ask_client(),
+                   version=version, max_rows=int(args.get("max_rows") or ask.MAX_ROWS))
+
+
 def _ontology_version(layer, args, scope):
     from ontology import publish as pub
     oid, version = _ontology(layer, args, scope)
@@ -597,6 +623,7 @@ _HANDLERS = {
     "get_contract": _get_contract,
     "validate_rules": _validate_rules,
     "ontology_version": _ontology_version,
+    "ask_question": _ask_question,
     "list_sources": _list_sources,
     "check_readiness": _check_readiness,
     "check_answerable": _check_answerable,

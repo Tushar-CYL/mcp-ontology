@@ -1,4 +1,5 @@
 import type {
+  OntoAsk,
   OntoBuildRequest,
   OntoContextResult,
   OntoFieldEdit,
@@ -105,6 +106,7 @@ function statusType(status: number): string {
   if (status === 401) return 'Unauthorized'
   if (status === 403) return 'Forbidden'
   if (status === 404) return 'NotFound'
+  if (status === 405) return 'OlderServer'
   if (status === 409) return 'Conflict'
   if (status === 422) return 'ValidationError'
   if (status === 429) return 'TooManyRequests'
@@ -113,8 +115,9 @@ function statusType(status: number): string {
 }
 
 function statusMessage(status: number): string {
-  if (status === 404) {
-    return 'The API has no route for this request. This part of the service may not be available yet.'
+  if (status === 404 || status === 405) {
+    return 'The server does not know this request. It is probably running an older version than '
+      + 'the web app: stop it and start it again with "python run_server.py", then try again.'
   }
   if (status === 400 || status === 422) {
     return 'The service rejected this request. Check the values you entered and try again.'
@@ -141,6 +144,12 @@ export function normalizeApiError(status: number, payload: unknown): ApiError {
   // server itself did not answer. Say that, not "the service failed".
   const ours = payload !== null && typeof payload === 'object'
     && typeof (payload as Record<string, unknown>).error === 'object'
+  // A 404/405 WITHOUT our envelope is the web app calling a route this server
+  // does not have (bare "Method Not Allowed" from the page catch-all): the
+  // server is older than the web app. Say that, not the raw status text.
+  if ((status === 404 || status === 405) && !ours) {
+    return new ApiError(fallback, { status, type: 'OlderServer', payload })
+  }
   if ((status === 502 || status === 503 || status === 504) && !ours) {
     return new ApiError(
       'Cannot reach the Strata server. It may be stopped or restarting: start it with '
@@ -589,6 +598,12 @@ export const api = {
   ontoDelete: (oid: string, signal?: AbortSignal) =>
     request<{ deleted: string }>(`/onto/${encodeURIComponent(oid)}`, {
       method: 'DELETE', signal,
+    }),
+
+  /** A business question answered from the published ontology (AI writes the SQL). */
+  ontoAsk: (oid: string, question: string, signal?: AbortSignal) =>
+    request<OntoAsk>(`/onto/${encodeURIComponent(oid)}/ask`, {
+      method: 'POST', body: { question }, signal, timeoutMs: 180_000,
     }),
 
   ontoUse: (oid: string, signal?: AbortSignal) =>

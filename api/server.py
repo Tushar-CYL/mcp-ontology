@@ -992,6 +992,19 @@ def create_app(graph_path: str | Path | None = None,
             return Response(status_code=202)
         return JSONResponse(content=response)
 
+    # ------------------------------------------------- unknown /api route
+    # Registered after every real route. Without it a POST to a route this
+    # server does not have fell through to the web app's GET catch-all and
+    # came back as a bare "Method Not Allowed" - which is what a person sees
+    # when the web app is newer than the running server.
+    @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                   include_in_schema=False)
+    def unknown_api(path: str, request: Request):
+        raise _error(404, "NotFound",
+                     f"this server has no route {request.method} /api/{path}. If the web "
+                     "app offers it, the server is running an older version: stop it and "
+                     "start it again with  python run_server.py")
+
     # --------------------------------------------------------- static
     dist = FRONTEND_DIST.resolve()
     if (dist / "index.html").exists() and not os.environ.get("STRATA_NO_UI"):

@@ -5281,3 +5281,24 @@ textarea.mono {
   .page-header__actions { justify-content: flex-start; flex-wrap: wrap; }
   .onto-summary .onto-metric { flex: 1 1 40%; border-right: 0; }
 }
+
+/* Ask */
+.onto-ask { display: grid; gap: 16px; }
+.onto-ask__box { background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--accent); border-radius: var(--radius); padding: 18px 20px; display: grid; gap: 10px; box-shadow: var(--shadow-sm); }
+.onto-ask__box h3 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 1rem; }
+.onto-ask__box > p { margin: 0; color: var(--muted); font-size: 0.86rem; }
+.onto-ask__row { display: flex; gap: 8px; }
+.onto-ask__row .input { flex: 1; }
+.onto-ask__warn { margin: 0; color: var(--amber); font-size: 0.84rem; }
+.onto-ask__result .onto-card__title p { max-width: none; }
+.onto-ask__table { padding: 0 20px 14px; }
+.onto-ask__table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.onto-ask__fields { padding: 4px 20px 14px; }
+.onto-ask__fields h3 { margin: 0 0 8px; font-size: 0.86rem; }
+.onto-ask__fields ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.onto-ask__fields li { display: flex; align-items: center; gap: 10px; font-size: 0.86rem; flex-wrap: wrap; }
+.onto-ask__fields code { font-family: var(--mono); font-size: 0.74rem; color: var(--muted); }
+.onto-ask__sql { padding: 0 20px 16px; font-size: 0.86rem; }
+.onto-ask__sql summary { cursor: pointer; color: var(--muted); }
+.onto-ask__sql pre { margin: 8px 0 0; padding: 12px; background: var(--surface-muted); border-radius: var(--radius-sm); font-size: 0.78rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.onto-ask__checks { padding: 0 20px 16px; }

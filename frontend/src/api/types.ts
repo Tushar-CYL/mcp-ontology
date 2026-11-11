@@ -1169,5 +1169,28 @@ export interface OntoUse {
   nexus: { url: string; excel: string; tables: string[] }
   agents: { mcp_url: string; tool: string; arguments: Record<string, string>;
     claude_code: string; keys: string }
-  files: { json: string; owl: string; shacl: string; git_zip: string }
+  files: { json: string; ossie: string; owl: string; shacl: string; git_zip: string }
+}
+
+/** ask_question: rows + the SQL that produced them + the fields it used. */
+export interface OntoAsk {
+  ontology: string
+  version: number | null
+  question: string
+  coverage: number
+  things: string[]
+  unknown_words: string[]
+  answerable: boolean
+  sql: string | null
+  explanation: string
+  columns: string[]
+  rows: Array<Array<string | number | boolean | null>>
+  row_count: number
+  truncated: boolean
+  seconds?: number
+  repaired: boolean
+  fields_used: Array<{ column: string; label: string; role: string; unit: string | null;
+    check: OntoCheck; proof: string }>
+  checks: Array<{ name: string; passed: boolean; detail: string; severity: string }>
+  note: string
 }

@@ -48,3 +48,16 @@ def test_an_unbuilt_app_explains_what_to_do(tmp_path, monkeypatch):
         assert r.status_code == 200
         assert "python run_server.py" in r.text and "npm run build" in r.text
         assert c.get("/api/health").json()["status"] == "ok"
+
+
+def test_an_unknown_api_route_explains_itself_for_every_method(tmp_path, monkeypatch):
+    with TestClient(make_app(tmp_path, monkeypatch, built=True)) as c:
+        for method in ("get", "post", "put", "delete"):
+            kwargs = {"json": {}} if method in ("post", "put") else {}
+            r = getattr(c, method)("/api/onto/x/future-route", **kwargs)
+            assert r.status_code == 404, (method, r.status_code)
+            body = r.json()["error"]
+            assert body["type"] == "NotFound" and "older version" in body["message"]
+        # Real routes are untouched by the catch-all.
+        assert c.get("/api/health").status_code == 200
+        assert c.get("/api/onto").status_code == 200

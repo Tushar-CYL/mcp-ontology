@@ -71,6 +71,12 @@ class MetadataRequest(BaseModel):
     path: str
 
 
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=2000)
+    max_rows: int = Field(50, ge=1, le=500)
+    version: int | None = None
+
+
 def register(app, platform, error) -> None:
 
     def guard(fn):
@@ -195,6 +201,20 @@ def register(app, platform, error) -> None:
         guard(lambda: reg.delete_ontology(platform(request).layer.graph, oid))
         return {"deleted": oid}
 
+    @app.post("/api/onto/{oid}/ask")
+    def onto_ask(oid: str, request: Request, body: AskRequest):
+        from ontology import ask
+        layer = platform(request).layer
+        return guard(lambda: ask.ask(layer, oid, body.question, client=ai_client(),
+                                     version=body.version, max_rows=body.max_rows))
+
+    @app.get("/api/onto/{oid}/ossie")
+    def onto_ossie(oid: str, request: Request, version: int | None = None):
+        from ontology import ossie
+        text = guard(lambda: ossie.to_ossie(platform(request).layer.graph, oid, version))
+        return Response(text, media_type="application/yaml", headers={
+            "Content-Disposition": f'attachment; filename="{oid}.ossie.yaml"'})
+
     @app.get("/api/onto/{oid}/nexus")
     def onto_nexus(oid: str, request: Request, version: int | None = None):
         return guard(lambda: simple.for_excel(platform(request).layer.graph, oid, version))
@@ -224,6 +244,7 @@ def register(app, platform, error) -> None:
                        "keys": "Create a key on the Agents page; a key is scoped to "
                                "sources, so pick the sources of this ontology."},
             "files": {"json": f"{base}/api/onto/{oid}/nexus",
+                      "ossie": f"{base}/api/onto/{oid}/ossie",
                       "owl": f"{base}/api/eo/{oid}/export/turtle",
                       "shacl": f"{base}/api/eo/{oid}/export/shacl",
                       "git_zip": f"{base}/api/eo/{oid}/export/zip"},
