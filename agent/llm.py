@@ -44,6 +44,11 @@ Transport = Callable[[str, dict[str, str], dict[str, Any], float],
 # How long to wait before the single retry. Kept short: an agent answer is
 # interactive, and a second timeout fails the request anyway.
 RETRY_BACKOFF_SECONDS = 0.2
+# "429 Too Many Requests" is the service asking us to slow down, not a
+# refusal: wait (its Retry-After when given, capped) and try again.
+RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_WAIT_SECONDS = (2.0, 5.0, 10.0)
+RATE_LIMIT_MAX_WAIT = 20.0
 
 
 class AgentLLMError(RuntimeError):
@@ -54,10 +59,16 @@ class AgentLLMError(RuntimeError):
     """
 
     def __init__(self, message: str, *, status: int | None = None,
-                 body_excerpt: str | None = None) -> None:
+                 body_excerpt: str | None = None,
+                 retry_after: float | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.body_excerpt = body_excerpt
+        self.retry_after = retry_after
+
+    @property
+    def rate_limited(self) -> bool:
+        return self.status == 429
 
     def as_dict(self) -> dict:
         return {"type": type(self).__name__, "status": self.status,
@@ -174,7 +185,8 @@ class EYQClient:
 
     # ---------------------------------------------------------- complete
     def complete(self, messages: list[dict], max_tokens: int = 1200) -> str:
-        """One chat completion. Retries once on a timeout or a 5xx.
+        """One chat completion. Retries once on a timeout or a 5xx, and waits
+        out a rate limit (429) up to RATE_LIMIT_RETRIES times.
 
         A 4xx is a caller/credential problem: retrying it would only spend
         another request to get the same refusal. `max_completion_tokens` is
@@ -191,11 +203,21 @@ class EYQClient:
         headers = {"Content-Type": "application/json", "api-key": self.api_key}
         url = self.url
         last = self._fail("EYQ request failed before it was sent")
-        for attempt in (1, 2):
+        waits = 0
+        attempt = 0
+        while attempt < 2:
+            attempt += 1
             try:
                 data = self._transport(url, headers, body, self.timeout)
                 return self._content(data)
             except AgentLLMError as exc:
+                if exc.rate_limited and waits < RATE_LIMIT_RETRIES:
+                    wait = exc.retry_after if exc.retry_after is not None                         else RATE_LIMIT_WAIT_SECONDS[min(waits, len(RATE_LIMIT_WAIT_SECONDS) - 1)]
+                    time.sleep(max(0.0, min(float(wait), RATE_LIMIT_MAX_WAIT)))
+                    waits += 1
+                    attempt -= 1             # a rate limit is not a failed attempt
+                    last = exc
+                    continue
                 if exc.status is not None and 400 <= int(exc.status) < 500:
                     raise
                 last = exc
@@ -259,9 +281,14 @@ class EYQClient:
                 payload = exc.read().decode("utf-8", "replace")
             except Exception:                          # noqa: BLE001 - optional
                 payload = ""
-            raise self._fail(
+            error = self._fail(
                 f"EYQ HTTP {exc.code} {exc.reason or ''}".strip(),
-                status=int(exc.code), body=payload) from None
+                status=int(exc.code), body=payload)
+            try:
+                error.retry_after = float((exc.headers or {}).get("Retry-After"))
+            except (TypeError, ValueError):
+                error.retry_after = None
+            raise error from None
         except (TimeoutError, socket.timeout):
             raise
         except urllib.error.URLError as exc:

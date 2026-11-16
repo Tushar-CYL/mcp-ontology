@@ -31,13 +31,12 @@ describe('verdictTone', () => {
 })
 
 describe('LAYER_FLOW', () => {
-  it('walks from the source through the four layers to agents', () => {
+  it('walks from the source through the four tools to agents', () => {
     expect(LAYER_FLOW.map((step) => step.to)).toEqual([
-      '/onboarding', '/layers/ontology', '/layers/graph', '/layers/semantic',
-      '/layers/context', '/agents',
+      '/onboarding', '/tools/ontology', '/tools/graph', '/tools/semantic', '/tools/context', '/agents',
     ])
     expect(LAYER_FLOW.map((step) => step.label)).toEqual([
-      'Source', '1 Ontology', '2 Knowledge graph', '3 Semantic', '4 Context', 'Agents',
+      'Source', 'Ontology', 'Knowledge graph', 'Semantic', 'Context', 'Agents',
     ])
   })
 })

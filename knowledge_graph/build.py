@@ -94,16 +94,70 @@ def _signature_key(slug: str) -> str:
     return f"signature:{slug}"
 
 
+TABLES_ONLY = "|tables-only"
+
+
 def is_current(graph, schema: Schema, onto: Ontology,
                source: str = "") -> bool:
-    """Is this graph already built from exactly this source and ontology?"""
+    """Is this graph already built from exactly this source and ontology?
+    A tables-only load (see `materialise_only`) counts as current too: its
+    tables are, and nobody asked for the graph rows."""
     slug = source_slug(source or schema.name)
     try:
         got = graph.one("SELECT value FROM build_info WHERE key = ?",
                         [_signature_key(slug)])
     except Exception:                             # noqa: BLE001 - old graph
         return False
-    return bool(got) and got == signature(schema, onto, source)
+    return bool(got) and got.removesuffix(TABLES_ONLY) == signature(schema, onto, source)
+
+
+def is_tables_only(graph, source: str) -> bool:
+    got = graph.one("SELECT value FROM build_info WHERE key = ?",
+                    [_signature_key(source_slug(source))])
+    return bool(got) and str(got).endswith(TABLES_ONLY)
+
+
+def materialise_only(graph, schema: Schema, onto: Ontology, source: str = "",
+                     progress=None) -> dict:
+    """Copy the source tables and register the source WITHOUT building nodes
+    and edges. For a graph file of hundreds of millions of triples the
+    nodes/edges tables (and their unique indexes, which must fit in memory)
+    are what runs a laptop out of memory; the ontology, profiling and
+    questions only need the tables."""
+    writer = graph.writer() if hasattr(graph, "writer") else graph
+    src = source or schema.name
+    slug = source_slug(src)
+    say = progress or (lambda _: None)
+    t0 = time.monotonic()
+    try:
+        say(f"  reading the source ({len(schema.tables)} tables) - tables only, "
+            "the knowledge-graph rows are skipped for a source this large")
+        _materialise(writer, schema, src, slug, say)
+        writer.con.execute("BEGIN TRANSACTION")
+        clear_source(writer, src, drop_tables=False)
+        _register_source(writer, schema, src)
+        _register(writer, onto, src, slug)
+        sig = signature(schema, onto, src) + TABLES_ONLY
+        _set_info(writer, _signature_key(slug), sig)
+        _set_info(writer, f"rejected:{slug}", "[]")
+        _set_info(writer, f"source:{slug}", src)
+        writer.con.execute(
+            "UPDATE sources SET signature = ?, built_at = now(), status = 'built',"
+            " tables = ?, rows = ? WHERE source_id = ?",
+            [sig, len(schema.tables), sum(t.row_count or 0 for t in schema.tables), src])
+        writer.con.execute("COMMIT")
+    except Exception:
+        try:
+            writer.con.execute("ROLLBACK")
+        except Exception:                          # noqa: BLE001
+            pass
+        raise
+    finally:
+        if writer is not graph:
+            writer.con.close()
+    say(f"  tables loaded in {time.monotonic() - t0:,.0f}s")
+    return {"source": src, "nodes": 0, "edges": 0, "skipped_edges": 0, "rejected": [],
+            "tables_only": True}
 
 
 # ------------------------------------------------------------------- build

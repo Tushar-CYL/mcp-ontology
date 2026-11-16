@@ -8,6 +8,8 @@
 
 // ------------------------------------------------------------------ health
 export interface HealthResponse {
+  /** Whether this server requires an access token (STRATA_API_TOKENS). */
+  auth?: { required: boolean }
   /** True while saved sources are re-opening in the background. */
   warming?: boolean
   status: string
@@ -64,12 +66,6 @@ export interface OntologyRelation {
   count: number
 }
 
-export interface OntologyResponse {
-  source: string
-  classes: OntologyClass[]
-  relations: OntologyRelation[]
-}
-
 // ------------------------------------------------------------------- graph
 export interface GraphNode {
   id: string
@@ -85,11 +81,6 @@ export interface GraphEdge {
   target: string
   relation: string
   provenance?: string
-}
-
-export interface GraphResponse {
-  nodes: GraphNode[]
-  edges: GraphEdge[]
 }
 
 // ---------------------------------------------------------------- semantic
@@ -115,17 +106,6 @@ export interface MetricsResponse {
 
 export type MetricRow = unknown[] | Record<string, unknown>
 
-export interface EvaluateMetricRequest {
-  source: string
-  filters?: Record<string, string>
-  group_by?: string
-  time_from?: string
-  time_to?: string
-  compare_previous?: boolean
-  /** Preview a proposed (draft) metric; never used by agents. */
-  preview_draft?: boolean
-}
-
 export interface EvaluateMetricResponse {
   rows: MetricRow[]
   sql: string
@@ -146,16 +126,6 @@ export interface MetricHealthCheck {
   passed: boolean
   detail: string
   severity?: string
-}
-
-export interface MetricHealthResponse {
-  metric: string
-  source: string
-  score: number
-  checks: MetricHealthCheck[]
-  time_min?: string | null
-  time_max?: string | null
-  definition: MetricSummary
 }
 
 export interface MetricContributor {
@@ -263,34 +233,6 @@ export interface ContextSuggestions {
   source: string
   questions: SuggestedQuestion[]
   note: string
-}
-
-export interface ContextResponse {
-  charts?: ContextCharts
-  answerable?: Answerable
-  receipt?: Receipt
-  focus: ContextFocus | string | null
-  answer: string
-  facts: ContextFact[]
-  dropped: ContextFact[]
-  sources: string[]
-  review_pending: number
-  chars: number
-  rendered: string
-  budget_chars?: number
-  coverage?: ContextCoverage
-  metric?: MetricSummary
-  period?: { label?: string; from?: string; to?: string; prior_from?: string }
-  filters?: Record<string, string>
-}
-
-export interface ContextQuery {
-  source: string
-  class?: string
-  key?: string
-  question?: string
-  metric?: string
-  budget_chars?: number
 }
 
 // ------------------------------------------------------------------- tools
@@ -569,7 +511,6 @@ export interface AskResponse {
 }
 
 export type RunResponse = AskResponse
-
 
 // ------------------------------------------------------- context factory
 export interface FactoryAssetCounts {
@@ -1044,6 +985,8 @@ export interface OntoField {
   proof: string
   confidence: number
   links_to: string | null
+  /** The kind of personal data ("Email", "Phone number"...), when the field holds it. */
+  personal?: string | null
 }
 
 export interface OntoThing {
@@ -1153,6 +1096,22 @@ export interface OntoContextResult {
   method: 'ai' | 'rules'
   version: number | null
   ontology: OntoView
+  /** Business words the semantic layer learned from the note. */
+  learned?: Array<{ word: string; metric: string }>
+}
+
+/** note: Add context · ask: questions · metric: define in words · search: values to find. */
+export type SuggestKind = 'note' | 'ask' | 'metric' | 'search'
+
+export interface OntoSuggestion {
+  text: string
+  /** The fact from the data behind it. */
+  why: string
+}
+
+export interface OntoSuggestions {
+  suggestions: OntoSuggestion[]
+  method: 'ai' | 'data'
 }
 
 export interface OntoFieldEdit {
@@ -1166,7 +1125,8 @@ export interface OntoFieldEdit {
 export interface OntoUse {
   ontology: string
   version: number | null
-  nexus: { url: string; excel: string; tables: string[] }
+  nexus: { url: string; excel: string; tables: string[]; power_query: string;
+    contract: Record<string, string[]> }
   agents: { mcp_url: string; tool: string; arguments: Record<string, string>;
     claude_code: string; keys: string }
   files: { json: string; ossie: string; owl: string; shacl: string; git_zip: string }
@@ -1194,3 +1154,246 @@ export interface OntoAsk {
   checks: Array<{ name: string; passed: boolean; detail: string; severity: string }>
   note: string
 }
+
+// ---------------------------------------------------- knowledge graph tool
+/** One entity: which entity set (a table of a thing, or `graph:<source>`) and its id. */
+export interface KgRef {
+  set: string
+  key: string
+}
+
+export interface KgHealth {
+  severity: 'warning' | 'info'
+  kind: 'broken_link' | 'hub' | 'unused' | 'isolated'
+  text: string
+  link?: string
+  entity?: KgRef
+}
+
+export interface KgConnectionStat {
+  key: string
+  label: string
+  from_thing: string
+  to_thing: string
+  connections: number
+  orphans: number
+  missing: number
+  parents: number
+  parents_used: number
+  declared?: string | null
+  busiest?: { key: string; count: number }
+}
+
+export interface KgSchemaTable {
+  thing: string
+  table: string
+  rows: number | null
+  key: string[] | null
+  columns: string[]
+  graph?: boolean
+}
+
+/** Real records and their links, for the graph picture. */
+export interface KgPicture {
+  nodes: Array<KgRef & { id: string; thing: string; label: string | null }>
+  edges: Array<{ id: string; source: string; target: string; label: string }>
+}
+
+export interface KgOverview {
+  ontology: { id: string; name: string; version?: number }
+  schema: KgSchemaTable[]
+  summary: {
+    entities: number
+    connections: number
+    things: number
+    link_types: number
+    broken_links: number
+    connected_pct: number
+  }
+  things: Array<{ thing: string; entities: number; tables: string[] }>
+  connections: KgConnectionStat[]
+  graphs: Array<{
+    source: string
+    entities: number
+    connections: number
+    unconnected: number
+    busiest: Array<{ key: string; label: string | null; degree: number }>
+  }>
+  health: KgHealth[]
+}
+
+export interface KgHit extends KgRef {
+  thing: string
+  label: string | null
+  /** Which field matched when it was not the id or name, e.g. "City: sao paulo". */
+  matched?: string
+}
+
+export interface KgSearch {
+  query: string
+  results: KgHit[]
+}
+
+export interface KgEntity extends KgRef {
+  thing: string
+  label: string | null
+  fields: Array<{
+    column: string
+    label: string
+    role: string | null
+    unit: string | null
+    personal: string | null
+    value: string | number | boolean | null
+  }>
+  connections: Array<{
+    link: string
+    direction: 'in' | 'out'
+    text: string
+    thing: string | null
+    set: string
+    count: number
+    items: Array<KgRef & { label: string | null }>
+    broken?: boolean
+    value?: string | number | null
+  }>
+}
+
+export interface KgStep extends KgRef {
+  thing: string
+  label: string | null
+  via: string | null
+}
+
+export interface KgPath {
+  found: boolean
+  hops?: number
+  steps?: KgStep[]
+  text?: string
+  hops_searched?: number
+}
+
+// ---------------------------------------------------------------- context tool
+export interface CtxFact {
+  n?: number
+  text: string
+  citation: string | null
+  kind: string
+  source: string
+  reason?: string
+}
+
+export interface CtxBuild {
+  ontology: { id: string; name: string; version?: number }
+  data_as_of: string | null
+  question: string
+  context: string
+  timings_ms: Record<string, number>
+  steps: {
+    understand: {
+      records: Array<KgHit & { phrase: string }>
+      things: Array<{ name: string; why: string }>
+      fields: Array<{ key: string; label: string; thing: string; why: string }>
+      values: Array<{ phrase: string; value: string; label: string; thing: string; set: string; column: string; records: number }>
+      unknown: string[]
+      ambiguous: Array<{ phrase: string; things: string[] }>
+      coverage: number
+    }
+    follow: {
+      walks: Array<{
+        from: KgRef & { label: string; thing: string }
+        steps: Array<{ hop: number; reached: Array<{ thing: string; count: number; via: string }>; by_link?: Array<{ link: string; count: number }> }>
+        records: number
+      }>
+      bridges: string[]
+      in_scope: string[]
+      joins: string[]
+      not_looked_at: string[]
+    }
+    facts: {
+      considered: number
+      kept: CtxFact[]
+      dropped: CtxFact[]
+      quarantined: Array<{ what: string; why: string }>
+      chars: number
+      budget_chars: number
+      sql?: string | null
+      table?: { columns: string[]; rows: Array<Array<string | number | null>> } | null
+    }
+    answer: {
+      status: 'answered' | 'not_enough' | 'unverified' | 'no_ai' | 'ai_busy' | 'ai_error'
+      text: string
+      cited: number[]
+      warning?: string
+      unsupported_numbers?: number[]
+    }
+  }
+}
+
+export interface CtxChart {
+  id: string
+  kind: 'bar' | 'line'
+  title: string
+  subtitle?: string
+  x: string[]
+  y: number[]
+  y_label: string
+  horizontal?: boolean
+  question: string
+}
+
+export interface CtxInsights {
+  ontology: { id: string; name: string }
+  kpis: Array<{ label: string; value: number; unit?: string | null; question: string }>
+  charts: CtxChart[]
+  questions: string[]
+}
+
+// ---------------------------------------------------------------- semantic tool
+export interface SemCard {
+  name: string
+  title: string
+  status: 'certified' | 'proposed' | 'retired'
+  value: number | null
+  unit: string | null
+  format: string | null
+  trend: Array<{ period: string; value: number | null }>
+  thing: string | null
+  synonyms: string[]
+  drift: string[]
+  owner: string | null
+  dims: Array<{ name: string; label: string; thing: string }>
+  words: string | null
+}
+
+export interface SemDecision {
+  word: string
+  question: string
+  candidates: Array<{ name: string; title: string; value: number | null; words: string | null; thing: string | null }>
+}
+
+export interface SemOverview {
+  ontology: { id: string; name: string }
+  decisions: SemDecision[]
+  metrics: SemCard[]
+  summary: { certified: number; proposed: number; drift: number }
+}
+
+export interface SemDetail extends SemCard {
+  by: string | null
+  breakdown: { by: string; rows: Array<[string | number | null, number | null]> } | null
+  receipt: {
+    words: string
+    formula: string
+    filters: string[]
+    joins: string[]
+    safe_joins: string
+    time: string | null
+    owner: string | null
+    certified_at: string | null
+    certified_by: string | null
+    note: string | null
+    sql: string
+  }
+  verified: Array<{ key: string; question: string; metric: string; passed: boolean; why: string | null }>
+}
+

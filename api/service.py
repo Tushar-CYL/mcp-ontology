@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from context.assemble import build_context
-from knowledge_graph.build import build, is_current, rejected_links, table_ref
+from knowledge_graph.build import build, is_current, is_tables_only, materialise_only, rejected_links, table_ref
 from knowledge_graph.resolve import candidates as identity_candidates
 from knowledge_graph.resolve import explain as explain_entity
 from knowledge_graph.resolve import resolve as resolve_links
@@ -43,6 +43,28 @@ class SourceBundle:
 READINESS_MAX_AGE = 15 * 60
 
 
+# A graph file bigger than this is loaded as tables only (no nodes/edges):
+# the ontology still comes out, the knowledge-graph layer is skipped.
+GRAPH_BUILD_MAX_ROWS = 10_000_000
+
+
+def _tables_only(schema) -> bool:
+    """Only graph-shaped sources (triple folders, RDF files) get this
+    treatment: their node/edge tables are the whole file again, with unique
+    indexes that must fit in memory."""
+    import os
+    try:
+        limit = int(os.environ.get("STRATA_GRAPH_BUILD_MAX_ROWS", GRAPH_BUILD_MAX_ROWS))
+    except ValueError:
+        limit = GRAPH_BUILD_MAX_ROWS
+    names = {t.name for t in schema.tables}
+    graph_shaped = bool(getattr(schema, "triples", None)) or (
+        any({"source", "predicate", "target"} <= {c.name for c in t.columns} for t in schema.tables)
+        and any({"id", "label"} <= {c.name for c in t.columns} for t in schema.tables))
+    rows = sum(t.row_count or 0 for t in schema.tables)
+    return graph_shaped and rows > limit and bool(names)
+
+
 class MiddleLayer:
     """A graph plus the sources it was built from. One object, no globals."""
 
@@ -51,6 +73,7 @@ class MiddleLayer:
         self.bundles: list[SourceBundle] = []
         self._readiness: dict[str, tuple[float, dict]] = {}
         self._readiness_lock = threading.Lock()
+        self._reopen_lock = threading.Lock()
         self._clock = time.monotonic
 
     # ---------------------------------------------------------- sources
@@ -72,10 +95,19 @@ class MiddleLayer:
         name = source or schema.name
         say(f"found {len(onto.classes)} kinds of thing and "
             f"{len(onto.relations)} candidate links")
+        tables_only = _tables_only(schema)
         if rebuild or not is_current(self.graph, schema, onto, source=name):
-            build(self.graph, schema, onto, source=name, progress=say)
+            if tables_only:
+                materialise_only(self.graph, schema, onto, source=name, progress=say)
+            else:
+                build(self.graph, schema, onto, source=name, progress=say)
         else:
             say("graph already up to date")
+        if tables_only or is_tables_only(self.graph, name):
+            schema.warnings.append(
+                f"{name}: loaded as tables only ({sum(t.row_count or 0 for t in schema.tables):,} "
+                "rows); the ontology works, the knowledge-graph layer is skipped. Lower "
+                "STRATA_GRAPH_BUILD_MAX_ROWS or raise it to change the cut-off.")
         rejected = rejected_links(self.graph, name)
         for rel_name in rejected:
             onto.relations.pop(rel_name, None)
@@ -124,7 +156,21 @@ class MiddleLayer:
         for bundle in self.bundles:
             if bundle.source == source:
                 return bundle
-        # The graph may have been opened without its sources (a warm process).
+        # Loaded before but not reopened at this start (MIDDLE_LAYER_WARM_SOURCES
+        # names only some sources, or warming has not reached it yet): open it
+        # now from the origin the graph recorded. The build is skipped because
+        # the signature is current, so this costs only the metadata read.
+        origin = next((s.get("origin") for s in self.graph.sources()
+                       if s.get("source_id") == source), None)
+        if origin:
+            with self._reopen_lock:
+                for bundle in self.bundles:          # another request opened it
+                    if bundle.source == source:
+                        return bundle
+                self.add_source(origin, source=source)
+            for bundle in self.bundles:
+                if bundle.source == source:
+                    return bundle
         raise KeyError(
             f"source {source!r} is not loaded in this service; call "
             f"add_source({source!r}, origin) first")

@@ -19,6 +19,7 @@ import duckdb
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -82,6 +83,10 @@ DEFAULT_GUARDRAILS = [
      "instruction": "Do not expose email, phone, SSN or card data.",
      "enabled": True, "source": "default"},
 ]
+
+
+class LoginRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
 
 
 class SourceRequest(BaseModel):
@@ -297,9 +302,9 @@ class Platform:
                    progress=None) -> dict:
         from api import paths
         paths.check(path)                      # STRATA_DATA_ROOTS, when set
-        if not Path(path).exists() and not path.lower().startswith(
-                ("postgres://", "mysql://", "snowflake://", "databricks://",
-                 "http://", "https://")):
+        # Any scheme://... is a database or object-store URL (the driver says
+        # what it supports); only a plain path must exist on disk.
+        if not Path(path).exists() and not re.match(r"^[a-z][a-z0-9+.\-]*://", path, re.I):
             raise FileNotFoundError(path)
         say = progress or (lambda _line: None)
         summary = self.layer.add_source(path, source=name, progress=say)
@@ -510,6 +515,39 @@ def create_app(graph_path: str | Path | None = None,
         CORSMiddleware, allow_origins=ALLOWED_ORIGINS or ["*"],
         allow_credentials=False, allow_methods=["*"], allow_headers=["*"])
 
+    # ------------------------------------------------------- access token
+    from api import auth as api_auth
+
+    @app.middleware("http")
+    async def api_token_guard(request: Request, call_next):
+        if api_auth.allows(request):
+            return await call_next(request)
+        return JSONResponse(status_code=401, headers={"WWW-Authenticate": 'Bearer realm="strata"'},
+                            content={"error": {"type": "Unauthorized",
+                                               "message": "sign in: this server requires an "
+                                                          "access token"}})
+
+    @app.post("/api/auth/login")
+    def login(request: Request, body: LoginRequest):
+        if not api_auth.required():
+            return {"ok": True, "required": False}
+        if not api_auth.valid(body.token):
+            raise _error(401, "Unauthorized", "that access token is not valid")
+        response = JSONResponse(content={"ok": True, "required": True})
+        response.set_cookie(api_auth.COOKIE, body.token, httponly=True, samesite="lax",
+                            secure=request.url.scheme == "https", max_age=12 * 3600)
+        return response
+
+    @app.post("/api/auth/logout")
+    def logout():
+        response = JSONResponse(content={"ok": True})
+        response.delete_cookie(api_auth.COOKIE)
+        return response
+
+    @app.get("/api/auth/check")
+    def auth_check():
+        return {"ok": True, "required": api_auth.required()}
+
     # ---------------------------------------------------------- errors
     @app.exception_handler(KeyError)
     def key_error(_: Request, exc: KeyError):
@@ -554,6 +592,12 @@ def create_app(graph_path: str | Path | None = None,
     eo_routes.register(app, platform, _error)
     from api import onto_routes
     onto_routes.register(app, platform, _error)
+    from api import kg_routes
+    kg_routes.register(app, platform, _error)
+    from api import ctx_routes
+    ctx_routes.register(app, platform, _error)
+    from api import sem_routes
+    sem_routes.register(app, platform, _error)
 
     # ---------------------------------------------------------- health
     @app.get("/api/health")
@@ -561,7 +605,9 @@ def create_app(graph_path: str | Path | None = None,
         state = platform(request)
         configured = bool(os.environ.get("EYQ_INCUBATOR_ENDPOINT")
                           and os.environ.get("EYQ_INCUBATOR_KEY"))
+        from api import auth as api_auth
         return {"status": "ok", "graph": state.graph_path,
+                "auth": {"required": api_auth.required()},
                 "sources": state.layer.graph.source_ids(),
                 "llm": {"configured": configured,
                         "model": os.environ.get("EYQ_MODEL", "gpt-5.2")},

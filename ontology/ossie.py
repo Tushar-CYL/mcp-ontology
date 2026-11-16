@@ -91,6 +91,19 @@ def build_model(graph, ontology_id: str, version: int | None = None) -> dict:
                                   **({"description": c["description"]} if c.get("description") else {})}
                                  for c in calcs]
             datasets.append(ds)
+    # Certified business metrics from the semantic layer, on their fact dataset.
+    by_name = {d["name"]: d for d in datasets}
+    for cm in certified_metrics(graph, ontology_id):
+        ds = by_name.get(dataset_of_table.get(cm["member"]))
+        if ds is None:
+            continue
+        ds.setdefault("metrics", []).append({
+            "name": slug(cm["name"]), "expression": {"sql": cm["formula"]},
+            "description": cm["meaning"],
+            "ai_context": {"synonyms": [cm["title"], *cm["synonyms"]],
+                           "instructions": f"Certified by Strata" + (f" (owner {cm['owner']})" if cm["owner"] else "")
+                                           + (f"; filters: {'; '.join(cm['filters'])}" if cm["filters"] else "")
+                                           + ". Use this definition for this business word."}})
     relationships, seen = [], set()
     for link in v["links"]:
         if not link.get("from") or not link.get("to"):
@@ -127,6 +140,29 @@ def build_model(graph, ontology_id: str, version: int | None = None) -> dict:
         "things": [{"name": t["name"], "tables": t["tables"], "records": t["records"]}
                    for t in v["things"]]}}]
     return model
+
+
+def certified_metrics(graph, ontology_id: str) -> list[dict]:
+    """Certified metrics of the ontology's semantic layer, flat."""
+    from ontology import registry as reg
+    from semantic import definitions as defs
+    from semantic.model import source_of
+    out = []
+    try:
+        rows = defs.list_definitions(graph, source_of(ontology_id))
+    except Exception:                              # noqa: BLE001 - no semantic layer yet
+        return out
+    for d in rows:
+        if d["status"] != "approved":
+            continue
+        meta = (reg.get_item(graph, ontology_id, "metric", d["name"], missing_ok=True) or {}).get("payload") or {}
+        out.append({"name": d["name"], "title": d["title"], "formula": d["value_expr"],
+                    "meaning": d.get("description") or "", "owner": d.get("owner") or "",
+                    "synonyms": d.get("synonyms") or [], "member": meta.get("member"),
+                    "thing": meta.get("thing"), "unit": d.get("unit") or "",
+                    "filters": [f"{f['label']} = {f['value']}" for f in meta.get("filters") or []],
+                    "certified_at": meta.get("certified_at")})
+    return out
 
 
 def to_ossie(graph, ontology_id: str, version: int | None = None) -> str:

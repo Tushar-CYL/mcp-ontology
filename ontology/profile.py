@@ -15,6 +15,7 @@ from ontology.schema import is_numeric, is_temporal
 
 TOP_VALUES_MAX_DISTINCT = 50
 TOP_N = 10
+EXACT_FROM = 0.9          # approx distinct / non-null at which the count is made exact
 
 
 def _family(column) -> str:
@@ -40,8 +41,18 @@ def profile_table(graph, schema, table, source: str) -> dict:
             parts += [f"min({q})", f"max({q})"]
         else:
             parts += ["NULL", "NULL"]
-    row = graph.sql(f"SELECT {', '.join(parts)} FROM {ref}")[0]
+    row = list(graph.sql(f"SELECT {', '.join(parts)} FROM {ref}")[0])
     rows = int(row[0] or 0)
+    # approx_count_distinct is off by a few percent, so 1,000 unique order
+    # ids read as "977 values". Count exactly for the columns that could be
+    # keys, where "every value is unique" is a claim shown to people.
+    near_unique = [i for i, _ in enumerate(cols)
+                   if row[1 + 4 * i] and (row[2 + 4 * i] or 0) >= EXACT_FROM * row[1 + 4 * i]]
+    if near_unique:
+        exact = graph.sql("SELECT " + ", ".join(
+            f"count(DISTINCT {qi(cols[i].name)})" for i in near_unique) + f" FROM {ref}")[0]
+        for i, n in zip(near_unique, exact):
+            row[2 + 4 * i] = n
     columns, freshness = [], None
     for i, c in enumerate(cols):
         non_null, distinct, lo, hi = row[1 + 4 * i: 5 + 4 * i]

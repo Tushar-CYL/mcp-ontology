@@ -111,7 +111,7 @@ export function Onboarding() {
       <PageHeader
         eyebrow="Start here"
         title="Make every data source usable for trusted decisions"
-        description="Connect one source. Strata turns it into four layers (a catalogue, a connected map, a rulebook of approved numbers and a cited briefing folder) and gives you agents that use all four and say when they cannot answer."
+        description="Connect one source. Strata builds its ontology (what everything means), its knowledge graph (how records connect) and the context an AI may see for each question, and gives you agents that use them and say when they cannot answer."
       />
 
       {selectedSource ? (
@@ -120,7 +120,7 @@ export function Onboarding() {
             const count =
               step.layer === 'ontology' ? `${selectedSource.classes} kinds of thing`
                 : step.layer === 'graph' ? `${selectedSource.nodes.toLocaleString()} records`
-                  : step.layer === 'semantic' ? 'approved metrics'
+                  : step.layer === 'semantic' ? 'governed metrics'
                     : step.layer === 'context' ? 'cited evidence'
                       : index === 0 ? (selectedSource.name || selectedSource.id)
                         : '6 agent types'
@@ -152,7 +152,7 @@ export function Onboarding() {
               value={path}
               onChange={(event) => setPath(event.target.value)}
               disabled={busy}
-              hint="The API reads the source once, derives the four layers and records build warnings."
+              hint="Strata reads the source once, builds what the tools need and records any warnings."
               required
             />
             <TextInput
@@ -165,7 +165,7 @@ export function Onboarding() {
             />
           </div>
           {busy ? (
-            <Callout tone="info" title="Building the four layers">
+            <Callout tone="info" title="Reading your data">
               Elapsed: <strong>{formatDuration(elapsed)}</strong>. The rest of Strata keeps working while
               this runs.
               {steps.length ? (

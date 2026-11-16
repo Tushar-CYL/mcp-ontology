@@ -10,7 +10,7 @@ interface NoSourceStateProps {
 /** Shown by every layer screen until a source has been connected. */
 export function NoSourceState({
   title = 'No data source selected',
-  description = 'The four layers are built from a source. Connect one — a database file, a folder of CSVs, a single file or a database URL — and this screen fills with what was found.',
+  description = 'The ontology, knowledge graph and context are built from a source. Connect one — a database file, a folder of CSVs, a single file or a database URL — and this screen fills with what was found.',
 }: NoSourceStateProps) {
   return (
     <EmptyState

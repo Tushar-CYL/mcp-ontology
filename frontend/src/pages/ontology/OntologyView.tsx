@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight, Check, CircleCheck, CircleDashed, Copy, Download, FileJson, GitBranch, KeyRound,
-  Link2, MessageSquarePlus, Pencil, RefreshCw, Search, Send, Share2, Table2,
+  Link2, Lock, MessageSquarePlus, Pencil, RefreshCw, Search, Send, Share2, Table2,
   TriangleAlert, X,
 } from 'lucide-react'
 import { api, describeError } from '../../api/client'
+import { SuggestionChips } from '../../components/SuggestionChips'
+import { useSuggestions } from '../../hooks/useSuggestions'
 import type { EoJob, OntoAsk, OntoCheck, OntoField, OntoThing, OntoView as View } from '../../api/types'
 import { Button } from '../../components/Button'
 import { Callout } from '../../components/Callout'
@@ -330,6 +332,11 @@ function FieldRow({ field, onEdit, onOpen }: { field: OntoField; onEdit: () => v
             <ArrowRight size={12} aria-hidden="true" /> {field.links_to}
           </button>
         ) : null}
+        {field.personal ? (
+          <span className="onto-field__personal" title="Personal data: Ask and agents avoid showing these values unless a question is about one record">
+            <Lock size={12} aria-hidden="true" /> Personal data ({field.personal})
+          </span>
+        ) : null}
       </div>
       <div className="onto-field__type">
         <span className="onto-pill">{field.role_label}</span>
@@ -396,12 +403,6 @@ function FieldEditor({ oid, field, roles, onDone }: {
 }
 
 /* ------------------------------------------------------------------ context */
-const EXAMPLES = [
-  'KUNNR = customer number',
-  'Canceled orders are not revenue',
-  'Reading should be called Sensor Reading',
-]
-
 function ContextBox({ view, onChange }: { view: View; onChange: (next?: View) => void }) {
   const toast = useToast()
   const [text, setText] = useState('')
@@ -421,16 +422,28 @@ function ContextBox({ view, onChange }: { view: View; onChange: (next?: View) =>
     }
   }
   const notes = [...view.notes].reverse().slice(0, 5)
+  const sugg = useSuggestions(view.id, 'note', `${view.version}|${view.notes.length}`)
+  const area = useRef<HTMLTextAreaElement>(null)
+  // A starter ends in '...': select it, so typing replaces it.
+  const pick = (x: string) => {
+    setText(x)
+    requestAnimationFrame(() => {
+      const el = area.current
+      if (!el) return
+      el.focus()
+      const at = x.indexOf('...')
+      if (at >= 0) el.setSelectionRange(at, at + 3)
+      else el.setSelectionRange(x.length, x.length)
+    })
+  }
   return (
     <section className="onto-context" aria-label="Add context">
       <h3><MessageSquarePlus size={16} aria-hidden="true" /> Add context</h3>
-      <p>Tell it what you know, in your own words. The AI updates the ontology and remembers your note.</p>
-      <textarea className="input input--area" rows={4} value={text} aria-label="Context note"
-        placeholder="e.g. KUNNR = customer number" onChange={(e) => setText(e.target.value)}
+      <p>Tell it what you know, in your own words. The AI updates the ontology and remembers your note; every layer uses it.</p>
+      <textarea ref={area} className="input input--area" rows={4} value={text} aria-label="Context note"
+        placeholder={`e.g. ${sugg.items[0]?.text ?? 'what a column really means'}`} onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && text.trim()) void send() }} />
-      <div className="onto-context__examples">
-        {EXAMPLES.map((x) => <button key={x} type="button" onClick={() => setText(x)}>{x}</button>)}
-      </div>
+      <SuggestionChips s={sugg} onPick={pick} detailed label="Suggested notes" />
       <Button variant="primary" fullWidth icon={<Send size={14} />} loading={busy}
         disabled={!text.trim()} onClick={send}>Apply</Button>
       {reply ? (
@@ -450,7 +463,6 @@ function ContextBox({ view, onChange }: { view: View; onChange: (next?: View) =>
 }
 
 /* ---------------------------------------------------------------------- ask */
-const ASK_EXAMPLES = ['How many records per status?', 'Top 5 by total amount', 'Average per month']
 
 type Cell = string | number | boolean | null
 
@@ -467,6 +479,7 @@ function AskPanel({ view }: { view: View }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<OntoAsk | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const sugg = useSuggestions(view.id, 'ask', view.version)
   const send = async (q: string) => {
     if (!q.trim() || busy) return
     setBusy(true)
@@ -485,16 +498,15 @@ function AskPanel({ view }: { view: View }) {
         <h3><MessageSquarePlus size={16} aria-hidden="true" /> Ask a question</h3>
         <p>Plain words. The AI writes one read-only query from the published ontology; it is checked, then run. Every number comes from your data.</p>
         <div className="onto-ask__row">
-          <input className="input" value={question} placeholder="e.g. how many orders per status?"
+          <input className="input" value={question} placeholder={`e.g. ${sugg.items[0]?.text ?? 'how many records per month?'}`}
             aria-label="Question" onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') void send(question) }} />
           <Button variant="primary" icon={<Send size={14} />} loading={busy} disabled={!question.trim()}
             onClick={() => send(question)}>Ask</Button>
         </div>
         {!view.ai.configured ? <p className="onto-ask__warn">No AI model is configured: a question returns the tables and joins to use, not an answer.</p> : null}
-        <div className="onto-context__examples">
-          {ASK_EXAMPLES.map((x) => <button key={x} type="button" onClick={() => { setQuestion(x); void send(x) }}>{x}</button>)}
-        </div>
+        <SuggestionChips s={sugg} disabled={busy} label="Suggested questions"
+          onPick={(x) => { setQuestion(x); void send(x) }} />
         {error ? <Callout tone="danger" title="Could not ask">{error}</Callout> : null}
       </section>
       {result ? <AskResult r={result} /> : null}
@@ -590,9 +602,11 @@ function UseIt({ view }: { view: View }) {
         <h3>Nexus and Excel</h3>
         <p>Nexus reads the ontology as three tables: Things, Fields and Links. It always gets the latest version.</p>
         <CopyLine label="Nexus link" value={u.nexus.url} />
+        <CopyLine label="Power Query" value={u.nexus.power_query} />
         <a className="btn btn--primary btn--md btn--block" href={api.ontoExcelUrl(view.id)} download>
           <Download size={15} /> <span>Download Excel workbook</span>
         </a>
+        <p className="onto-use__note">No add-in? In Excel: Data → Get Data → From Other Sources → Blank Query, paste the Power Query text into the Advanced Editor. Refresh pulls the latest published version.</p>
       </section>
       <section className="onto-use__card">
         <span className="onto-use__icon"><MessageSquarePlus size={20} /></span>

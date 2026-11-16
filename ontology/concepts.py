@@ -209,26 +209,32 @@ def find_crosswalks(graph, tables: list[dict]) -> list[dict]:
             stats[k] = _distinct(graph, t["ref"], col)
         return stats[k]
 
-    found, pairs = [], 0
+    found, pairs = declared_crosswalks(graph, tables, stat), 0
+    declared_cols = {(w["from_table"], w["from"].rsplit(".", 1)[1]) for w in found}
     for a in tables:
         for col in a["table"].columns:
             name = col.name
             if name.startswith("__") or _family(col) == "temporal" or _is_float(col):
                 continue
+            if (a["key"], name) in declared_cols:
+                continue                     # the database already says where it points
             id_named = _looks_like_id(name) and name != a["id"]
             for b, key in targets:
                 if b["key"] == a["key"]:
                     continue
-                same_name = name.lower() == key.lower()
+                # `id` = `id` in two tables says nothing: every table has one.
+                same_name = name.lower() == key.lower() and name.lower() not in _GENERIC
                 if not (id_named or same_name or _related_by_name(name, b, key)):
                     continue
                 pairs += 1
                 if pairs > MAX_PAIRS:
                     return found
                 a_non_null, a_distinct = stat(a, name)
-                _, b_distinct = stat(b, key)
+                b_non_null, b_distinct = stat(b, key)
                 if not a_distinct or not b_distinct:
                     continue
+                if b_distinct < NEAR_UNIQUE * b_non_null:
+                    continue                 # not a key: one half of a composite key
                 if not (id_named or same_name) and a_distinct < MIN_LINK_VALUES:
                     continue
                 if a_distinct > b_distinct / CONTAINMENT:
@@ -251,6 +257,37 @@ def find_crosswalks(graph, tables: list[dict]) -> list[dict]:
                     "alternate_key": key != b["id"],
                 })
     return found
+
+
+def declared_crosswalks(graph, tables: list[dict], stat) -> list[dict]:
+    """Foreign keys the database itself declares. They are links whatever the
+    data says; the data still measures them, so orphans show as a fact."""
+    by_name = {(t["source"], t["table"].name): t for t in tables}
+    out = []
+    for a in tables:
+        for fk in getattr(a["table"], "foreign_keys", None) or []:
+            b = by_name.get((a["source"], fk.ref_table))
+            if b is None or b["key"] == a["key"]:
+                continue
+            col, key = fk.column, fk.ref_column
+            a_non_null, a_distinct = stat(a, col)
+            _, b_distinct = stat(b, key)
+            matched = int(graph.sql(
+                f"SELECT count(*) FROM (SELECT DISTINCT CAST({qi(col)} AS VARCHAR) v"
+                f" FROM {a['ref']} WHERE {qi(col)} IS NOT NULL) x JOIN"
+                f" (SELECT DISTINCT CAST({qi(key)} AS VARCHAR) v FROM {b['ref']}) y"
+                f" USING (v)")[0][0]) if a_distinct and b_distinct else 0
+            out.append({
+                "from": f"{a['key']}.{col}", "to": f"{b['key']}.{key}",
+                "from_table": a["key"], "to_table": b["key"],
+                "matched": matched,
+                "contained": round(matched / a_distinct, 4) if a_distinct else 0.0,
+                "coverage": round(matched / b_distinct, 4) if b_distinct else 0.0,
+                "unique": round(a_distinct / a_non_null, 4) if a_non_null else 0.0,
+                "hub": a["role"] == "mdm_hub" or b["role"] == "mdm_hub",
+                "alternate_key": False, "declared": "the database",
+            })
+    return out
 
 
 def duplicate_business_keys(graph, tables: list[dict]) -> list[dict]:
@@ -291,6 +328,9 @@ def _is_same_entity(walk: dict, by_key: dict) -> bool:
 
 
 def _evidence(walk: dict) -> str:
+    if walk.get("declared"):
+        return (f"declared in {walk['declared']}: {walk['from']} -> {walk['to']};"
+                f" checked: {walk['contained']:.0%} of its values match")
     if walk.get("method") == "attribute":
         return (f"{walk['from']} and {walk['to']} share {walk['matched']} values after"
                 f" normalising ({walk['coverage']:.0%} of the smaller set)")
@@ -406,7 +446,8 @@ def propose_concepts(layer, ontology_id: str) -> dict:
         reg.put(graph, ontology_id, "relationship", key,
                 {"from_concept": w["from_concept"], "to_concept": w["to_concept"],
                  "from": w["from"], "to": w["to"], "coverage": w["coverage"],
-                 "contained": w["contained"], "unique": w["unique"]},
+                 "contained": w["contained"], "unique": w["unique"],
+                 **({"declared": w["declared"]} if w.get("declared") else {})},
                 confidence=w["contained"], evidence=[_evidence(w)])
         keep_links.add(key)
     dup_keys = duplicate_business_keys(graph, tables)

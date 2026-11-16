@@ -2,6 +2,8 @@ import type {
   OntoAsk,
   OntoBuildRequest,
   OntoContextResult,
+  OntoSuggestions,
+  SuggestKind,
   OntoFieldEdit,
   OntoListResponse,
   OntoUse,
@@ -37,21 +39,15 @@ import type {
   AgentsResponse,
   AskResponse,
   CertificationResponse,
-  ContextQuery,
-  ContextResponse,
   CreateSourceRequest,
   CreateSourceResponse,
-  EvaluateMetricRequest,
-  EvaluateMetricResponse,
-  GraphResponse,
   HealthResponse,
-  MetricHealthResponse,
   MetricsResponse,
-  OntologyResponse,
   PreviewResponse,
   IssuedKey,
   RunResponse,
   SourcesResponse,
+  CtxBuild, CtxInsights, KgEntity, SemCard, SemDetail, SemOverview, KgOverview, KgPath, KgPicture, KgRef, KgSearch,
 } from './types'
 
 /**
@@ -258,6 +254,19 @@ export function queryString(params: Record<string, QueryValue>): string {
   return text ? `?${text}` : ''
 }
 
+/** Where the browser goes to sign in; replaceable in tests. */
+export const navigation = {
+  signIn(): void {
+    if (typeof window === 'undefined' || window.location.pathname.startsWith('/login')) return
+    const next = encodeURIComponent(window.location.pathname + window.location.search)
+    window.location.assign(`/login?next=${next}`)
+  },
+}
+
+function signIn(): void {
+  navigation.signIn()
+}
+
 /** One typed fetch wrapper: JSON in, JSON out, a timeout, real errors. */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const {
@@ -308,7 +317,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     }
 
     if (!response.ok) {
-      throw normalizeApiError(response.status, payload)
+      const error = normalizeApiError(response.status, payload)
+      if (response.status === 401 && !path.startsWith('/auth/')) signIn()
+      throw error
     }
 
     return (payload ?? undefined) as T
@@ -340,6 +351,15 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
 /** The one place that knows every endpoint path. */
 export const api = {
+  /** Sign in with the server's access token; the server answers with a cookie. */
+  login: (token: string, signal?: AbortSignal) =>
+    request<{ ok: boolean; required: boolean }>('/auth/login', {
+      method: 'POST', body: { token }, signal, timeoutMs: 15_000,
+    }),
+
+  logout: (signal?: AbortSignal) =>
+    request<{ ok: boolean }>('/auth/logout', { method: 'POST', signal, timeoutMs: 15_000 }),
+
   health: (signal?: AbortSignal) =>
     request<HealthResponse>('/health', { signal, timeoutMs: 8_000 }),
 
@@ -354,43 +374,8 @@ export const api = {
       timeoutMs: LONG_TIMEOUT_MS,
     }),
 
-  ontology: (source: string, signal?: AbortSignal) =>
-    request<OntologyResponse>(`/layers/ontology${queryString({ source })}`, { signal }),
-
-  graph: (source: string, limit: number, signal?: AbortSignal) =>
-    request<GraphResponse>(`/layers/graph${queryString({ source, limit })}`, {
-      signal,
-      timeoutMs: 45_000,
-    }),
-
-  subgraph: (source: string, limit: number, relation?: string, signal?: AbortSignal) =>
-    request<GraphResponse>(
-      `/graph/subgraph${queryString({ source, limit, relation })}`,
-      { signal, timeoutMs: 45_000 },
-    ),
-
   metrics: (source: string, signal?: AbortSignal) =>
     request<MetricsResponse>(`/metrics${queryString({ source })}`, { signal }),
-
-  evaluateMetric: (name: string, payload: EvaluateMetricRequest, signal?: AbortSignal) =>
-    request<EvaluateMetricResponse>(`/metrics/${encodeURIComponent(name)}/evaluate`, {
-      method: 'POST',
-      body: payload,
-      signal,
-      timeoutMs: 90_000,
-    }),
-
-  metricHealth: (name: string, source: string, signal?: AbortSignal) =>
-    request<MetricHealthResponse>(
-      `/metrics/${encodeURIComponent(name)}/health${queryString({ source })}`,
-      { signal, timeoutMs: 60_000 },
-    ),
-
-  context: (query: ContextQuery, signal?: AbortSignal) =>
-    request<ContextResponse>(`/context${queryString({ ...query })}`, {
-      signal,
-      timeoutMs: 30_000,
-    }),
 
   /** Cached per source on the server; `refresh` re-runs every check, which
    * scans the whole graph and can take minutes on large sources. */
@@ -584,6 +569,11 @@ export const api = {
       method: 'POST', body: { text }, signal, timeoutMs: 180_000,
     }),
 
+  ontoSuggest: (oid: string, kind: SuggestKind, ai: boolean, signal?: AbortSignal) =>
+    request<OntoSuggestions>(`/onto/${encodeURIComponent(oid)}/suggest?kind=${kind}&ai=${ai}`, {
+      signal, timeoutMs: ai ? 90_000 : 30_000,
+    }),
+
   ontoEditField: (oid: string, edit: OntoFieldEdit, signal?: AbortSignal) =>
     request<OntoView>(`/onto/${encodeURIComponent(oid)}/fields`, {
       method: 'PUT', body: edit, signal, timeoutMs: 60_000,
@@ -608,6 +598,70 @@ export const api = {
 
   ontoUse: (oid: string, signal?: AbortSignal) =>
     request<OntoUse>(`/onto/${encodeURIComponent(oid)}/use`, { signal }),
+
+  // ------------------------------------------------- knowledge graph tool
+  kgOverview: (oid: string, signal?: AbortSignal) =>
+    request<KgOverview>(`/kg/${encodeURIComponent(oid)}/overview`, { signal, timeoutMs: 180_000 }),
+
+  kgSearch: (oid: string, q: string, signal?: AbortSignal) =>
+    request<KgSearch>(`/kg/${encodeURIComponent(oid)}/search${queryString({ q })}`, { signal }),
+
+  kgEntity: (oid: string, set: string, key: string, signal?: AbortSignal) =>
+    request<KgEntity>(`/kg/${encodeURIComponent(oid)}/entity${queryString({ set, key })}`, { signal }),
+
+  kgPath: (oid: string, from: KgRef, to: KgRef, maxHops = 4, signal?: AbortSignal) =>
+    request<KgPath>(`/kg/${encodeURIComponent(oid)}/path${queryString({
+      from_set: from.set, from_key: from.key, to_set: to.set, to_key: to.key, max_hops: maxHops,
+    })}`, { signal, timeoutMs: 120_000 }),
+
+  kgSample: (oid: string, signal?: AbortSignal) =>
+    request<KgPicture>(`/kg/${encodeURIComponent(oid)}/sample`, { signal, timeoutMs: 120_000 }),
+
+  kgExpand: (oid: string, set: string, key: string, signal?: AbortSignal) =>
+    request<KgPicture>(`/kg/${encodeURIComponent(oid)}/expand${queryString({ set, key })}`, { signal }),
+
+  semOverview: (oid: string, signal?: AbortSignal) =>
+    request<SemOverview>(`/sem/${encodeURIComponent(oid)}`, { signal, timeoutMs: 180_000 }),
+
+  semDetail: (oid: string, name: string, by?: string | null, signal?: AbortSignal) =>
+    request<SemDetail>(`/sem/${encodeURIComponent(oid)}/metric/${encodeURIComponent(name)}${queryString({ by })}`, { signal }),
+
+  semCertify: (oid: string, name: string, owner = '', note = '') =>
+    request<SemCard>(`/sem/${encodeURIComponent(oid)}/metric/${encodeURIComponent(name)}/certify`, {
+      method: 'POST', body: { owner, note } }),
+
+  semRetire: (oid: string, name: string) =>
+    request<{ name: string; status: string }>(`/sem/${encodeURIComponent(oid)}/metric/${encodeURIComponent(name)}/retire`, {
+      method: 'POST', body: {} }),
+
+  semSynonym: (oid: string, name: string, word: string) =>
+    request<{ synonyms: string[] }>(`/sem/${encodeURIComponent(oid)}/metric/${encodeURIComponent(name)}/synonym`, {
+      method: 'POST', body: { word } }),
+
+  semVerified: (oid: string, name: string, question: string, by?: string | null) =>
+    request<unknown>(`/sem/${encodeURIComponent(oid)}/metric/${encodeURIComponent(name)}/verified`, {
+      method: 'POST', body: { question, by: by ?? null } }),
+
+  semDecide: (oid: string, word: string, metric: string) =>
+    request<SemCard>(`/sem/${encodeURIComponent(oid)}/decide`, { method: 'POST', body: { word, metric } }),
+
+  semWords: (oid: string, text: string) =>
+    request<SemDetail>(`/sem/${encodeURIComponent(oid)}/words`, { method: 'POST', body: { text }, timeoutMs: 120_000 }),
+
+  ctxInsights: (oid: string, signal?: AbortSignal) =>
+    request<CtxInsights>(`/ctx/${encodeURIComponent(oid)}/insights`, { signal, timeoutMs: 120_000 }),
+
+  ctxBuild: (oid: string, question: string, budgetChars = 2000, signal?: AbortSignal) =>
+    request<CtxBuild>(`/ctx/${encodeURIComponent(oid)}/build`, {
+      method: 'POST', body: { question, budget_chars: budgetChars }, signal, timeoutMs: 180_000,
+    }),
+
+  ctxFeedback: (oid: string, question: string, text: string, signal?: AbortSignal) =>
+    request<{ saved: boolean; changes: unknown[]; reply: string }>(`/ctx/${encodeURIComponent(oid)}/feedback`, {
+      method: 'POST', body: { question, text }, signal, timeoutMs: 120_000,
+    }),
+
+  kgNeo4jUrl: (oid: string) => `${API_BASE}/kg/${encodeURIComponent(oid)}/neo4j`,
 
   /** Where the browser downloads the Excel workbook from (same origin). */
   ontoExcelUrl: (oid: string) => `${API_BASE}/onto/${encodeURIComponent(oid)}/excel`,

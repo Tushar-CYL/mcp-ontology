@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api } from './client'
+import { api, navigation } from './client'
 
 type Call = { url: string; method: string; body: unknown }
 
@@ -42,6 +42,16 @@ describe('simple ontology client', () => {
     expect(calls[1].url).toMatch(/\/onto\/p\/fields$/)
   })
 
+  it('asks for suggestions from the data, with and without the AI', async () => {
+    const calls = stubFetch({ suggestions: [{ text: 'Orders with Status cancelled do not count', why: '133 records' }],
+      method: 'data' })
+    const out = await api.ontoSuggest('my shop', 'note', false)
+    expect(out.suggestions[0].why).toBe('133 records')
+    expect(calls[0].url).toMatch(/\/onto\/my%20shop\/suggest\?kind=note&ai=false$/)
+    await api.ontoSuggest('p', 'metric', true)
+    expect(calls[1].url).toMatch(/\/onto\/p\/suggest\?kind=metric&ai=true$/)
+  })
+
   it('renames a thing, rebuilds, deletes', async () => {
     const calls = stubFetch({})
     await api.ontoEditThing('p', { key: 'Reading', name: 'Sensor reading' })
@@ -71,6 +81,21 @@ describe('simple ontology client', () => {
   it('explains a 405 as an older server (the web app is newer than the API)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('Method Not Allowed', { status: 405 })))
     await expect(api.ontoAsk('p', 'how many?')).rejects.toThrow('older version')
+  })
+
+  it('sends the browser to sign in on a 401', async () => {
+    const spy = vi.spyOn(navigation, 'signIn').mockImplementation(() => undefined)
+    stubFetch({ error: { type: 'Unauthorized', message: 'sign in' } }, 401)
+    await expect(api.ontoList()).rejects.toThrow('sign in')
+    expect(spy).toHaveBeenCalledTimes(1)
+    spy.mockRestore()
+  })
+
+  it('posts the token on login', async () => {
+    const calls = stubFetch({ ok: true, required: true })
+    await api.login('abc')
+    expect(calls[0]).toMatchObject({ method: 'POST', body: { token: 'abc' } })
+    expect(calls[0].url).toMatch(/\/auth\/login$/)
   })
 
   it('builds the Excel download link', () => {

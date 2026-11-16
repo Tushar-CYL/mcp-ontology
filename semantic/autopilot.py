@@ -6,7 +6,7 @@ no money columns at all) otherwise gets no metrics, an empty Semantic layer
 and nothing for agents to measure.
 
 Like Snowflake's Semantic View Autopilot and Databricks metric views
-(docs/research/2026/03_semantic_layer.md), Strata proposes metrics from the
+(docs/research/03_semantic_layer.md), Strata proposes metrics from the
 data itself and stores them as DRAFTS for a person to approve:
 
 * **count**: records per entity, dated by its own date column or by its

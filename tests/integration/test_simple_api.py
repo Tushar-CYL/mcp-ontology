@@ -101,7 +101,7 @@ def test_context_and_edits_publish_new_versions(api, built):
 
 def test_nexus_json_excel_and_use_links(api, built):
     data = api.get(f"/api/onto/{built}/nexus").json()
-    assert set(data) == {"ontology", "things", "fields", "links", "calculations"}
+    assert set(data) == {"ontology", "things", "fields", "links", "calculations", "metrics"}
     assert data["ontology"]["version"] >= 1
     assert {"Thing", "Field", "Meaning", "Role", "Unit", "Check", "Proof"} <= set(
         data["fields"][0])

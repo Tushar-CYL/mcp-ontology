@@ -1,7 +1,7 @@
 """The layer receipt: which of the four layers an answer used, in plain words.
 
 No vendor reviewed in the research gives end users a layer-level receipt
-(docs/research/2026/REPORT.md, "Trust comes from refusal..."). Every Strata
+(docs/research/REPORT.md, "Trust comes from refusal..."). Every Strata
 answer gets one, always in the same order, naming what each layer contributed
 and saying plainly when a layer was not needed.
 """

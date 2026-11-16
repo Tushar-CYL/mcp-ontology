@@ -22,6 +22,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import duckdb
+
 from ontology.keys import pick_key, profile_sql
 from ontology.rdf import RDF_TYPES, tables_for as rdf_tables
 from ontology.schema import Column, ForeignKey, Schema, Table
@@ -48,7 +50,7 @@ def connect(source: str, name: str | None = None) -> Schema:
     try:
         if re.match(r"^https?://", source, re.I):
             return _from_http(con, source, name)
-        if re.match(r"^\w+://", source):
+        if re.match(r"^[a-z][a-z0-9+.\-]*://", source, re.I):   # mysql+pymysql:// too
             return _from_url(con, source, name)
         p = Path(source)
         if not p.exists():
@@ -57,9 +59,15 @@ def connect(source: str, name: str | None = None) -> Schema:
                 f"  Give a file, a folder, or a database URL such as\n"
                 f"  postgres://user:pass@host/dbname")
         if p.is_dir():
+            from ontology.anydb import delta_schema, is_delta_folder
+            if is_delta_folder(p):
+                return _wrap_anydb(lambda: delta_schema(con, p, name))
             return _from_folder(con, p, name)
         if p.suffix.lower() in DB_FILES:
             return _from_db_file(con, p, name)
+        if p.suffix.lower() in {".accdb", ".mdb"}:
+            from ontology.anydb import access_schema
+            return _wrap_anydb(lambda: access_schema(con, p, name))
         if p.suffix.lower() in RDF_TYPES:
             return _from_rdf_file(p, name or p.stem)
         if p.suffix.lower() in FILE_TYPES:
@@ -68,8 +76,9 @@ def connect(source: str, name: str | None = None) -> Schema:
             f"do not know how to read {p.suffix or 'a file with no extension'}\n"
             f"  Tabular: {', '.join(sorted(FILE_TYPES))}\n"
             f"  Graph:   {', '.join(sorted(RDF_TYPES))}\n"
-            f"  Database files / URLs: {', '.join(sorted(DB_FILES))}, "
-            f"postgres://, mysql://, snowflake://, databricks://\n"
+            f"  Database files / URLs: {', '.join(sorted(DB_FILES))}, .accdb, "
+            f"postgres://, mysql://, mssql://, oracle://, odbc://, mongodb://, "
+            f"neo4j://, s3://, delta://, snowflake://, databricks://\n"
             f"  Or an http(s) URL ending in one of the tabular/graph types.")
     finally:
         con.close()
@@ -406,12 +415,26 @@ def _from_files(con, files: list[Path], name: str,
 
 
 # -------------------------------------------------------------- databases
+def _load_sqlite(con) -> None:
+    con.execute("INSTALL sqlite; LOAD sqlite")
+
+
 def _from_db_file(con, path: Path, name: str | None) -> Schema:
     if path.suffix.lower() == ".duckdb":
         con.execute(f"ATTACH '{_escape(str(path))}' AS src (READ_ONLY)")
         return _from_attached(con, "src", name or path.stem,
                               origin=str(path))
-    con.execute("INSTALL sqlite; LOAD sqlite")
+    try:
+        _load_sqlite(con)
+    except duckdb.Error as exc:
+        # Locked-down Windows machines (Smart App Control / WDAC) can block
+        # DuckDB's sqlite extension. Python's own sqlite3 is always there,
+        # so read the file through it into Parquet instead of failing.
+        from ontology.anydb import sqlite_schema
+        schema = sqlite_schema(con, path, name or path.stem)
+        schema.warnings.append(
+            f"read through Python's sqlite3 (DuckDB's sqlite extension is blocked: {str(exc)[:80]})")
+        return schema
     con.execute(f"ATTACH '{_escape(str(path))}' AS src (TYPE sqlite, READ_ONLY)")
     return _from_attached(con, "src", name or path.stem,
                           sqlite_file=path, origin=str(path))
@@ -429,22 +452,48 @@ def _from_url(con, url: str, name: str | None) -> Schema:
             raise SourceError(
                 f"could not connect to {kind}: {type(exc).__name__}: {exc}\n"
                 f"  Check the URL, credentials and that the driver is "
-                f"installed (see docs/API.md).") from exc
+                f"installed (see README.txt, section 12).") from exc
+    from ontology.anydb import schema_from_url
     ext = {"postgres": "postgres", "postgresql": "postgres",
            "mysql": "mysql"}.get(kind)
-    if not ext:
-        raise SourceError(
-            f"unsupported database {kind!r}\n"
-            f"  Supported URLs: postgres://, postgresql://, mysql://, "
-            f"snowflake://, databricks://\n"
-            f"  For anything else, export to Parquet or CSV and point at the "
-            f"folder.")
+    if ext:
+        # DuckDB's own extension is fastest (no copy through Python). It is
+        # not always available (the MySQL one is blocked by application
+        # control on some Windows machines), so the driver path is the
+        # fallback, not an error.
+        try:
+            con.execute(f"INSTALL {ext}; LOAD {ext}")
+            con.execute(f"ATTACH '{_escape(url)}' AS src (TYPE {ext}, READ_ONLY)")
+            schema = _from_attached(con, "src", name or kind, origin=url)
+            # DuckDB's attach reports primary keys but not foreign keys; the
+            # driver's catalogue has both. A declared link is worth keeping.
+            from ontology.anydb import overlay_keys, sqlalchemy_keys
+            overlay_keys(schema, sqlalchemy_keys(url))
+            return schema
+        except Exception as duck_exc:              # noqa: BLE001 - fall back
+            try:
+                con.execute("DETACH src")
+            except Exception:                      # noqa: BLE001
+                pass
+            try:
+                return schema_from_url(con, url, name)
+            except Exception as exc:               # noqa: BLE001 - both failed
+                raise SourceError(
+                    f"could not connect to {kind}:\n"
+                    f"  DuckDB extension: {str(duck_exc).splitlines()[0][:160]}\n"
+                    f"  driver: {str(exc).splitlines()[0][:200]}") from exc
+    return _wrap_anydb(lambda: schema_from_url(con, url, name))
+
+
+def _wrap_anydb(read):
+    """Run an anydb reader; every failure becomes a SourceError a person can act on."""
+    from ontology.anydb import AnyDbError
     try:
-        con.execute(f"INSTALL {ext}; LOAD {ext}")
-        con.execute(f"ATTACH '{_escape(url)}' AS src (TYPE {ext}, READ_ONLY)")
-    except Exception as e:
-        raise SourceError(f"could not connect to {kind}: {e}") from e
-    return _from_attached(con, "src", name or kind, origin=url)
+        return read()
+    except AnyDbError as exc:
+        raise SourceError(str(exc)) from exc
+    except Exception as exc:                       # noqa: BLE001 - driver error
+        raise SourceError(f"{type(exc).__name__}: {str(exc)[:300]}") from exc
 
 
 def _from_attached(con, db: str, name: str,

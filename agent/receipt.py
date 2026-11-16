@@ -7,7 +7,7 @@ Example::
 
 Vendors expose provenance as retrieval citations and builder-facing traces; a
 layer-level receipt for non-experts is not a documented feature elsewhere
-(docs/research/2026/REPORT.md). Every Strata answer carries one.
+(docs/research/REPORT.md). Every Strata answer carries one.
 """
 
 from __future__ import annotations

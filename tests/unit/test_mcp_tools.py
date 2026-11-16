@@ -17,6 +17,9 @@ EXPECTED_TOOLS = {
     "list_sources", "check_readiness", "search",              # general
     "list_entities", "describe_table",                        # ontology
     "graph_neighbours", "get_entity_context",                 # knowledge graph
+    "find_entity", "get_entity", "how_connected",             # knowledge graph tool
+    "context_for_question",                                   # context tool
+    "list_business_metrics", "get_business_metric",           # semantic tool
     "list_metrics", "get_metric", "evaluate_metric", "validate_sql",  # semantic
     "check_answerable", "get_context", "explain_citation",    # context
     "propose_change",                                         # steward only
@@ -29,6 +32,9 @@ LAYER_TAG = {
     "search": "[General]", "list_entities": "[Ontology]",
     "describe_table": "[Ontology]", "graph_neighbours": "[Graph]",
     "get_entity_context": "[Graph]", "list_metrics": "[Semantic]",
+    "find_entity": "[Graph]", "get_entity": "[Graph]", "how_connected": "[Graph]",
+    "context_for_question": "[Context]",
+    "list_business_metrics": "[Semantic]", "get_business_metric": "[Semantic]",
     "get_metric": "[Semantic]", "evaluate_metric": "[Semantic]",
     "validate_sql": "[Semantic]", "check_answerable": "[Context]",
     "get_context": "[Context]", "explain_citation": "[Context]",

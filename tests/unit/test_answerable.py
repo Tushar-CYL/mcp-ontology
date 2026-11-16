@@ -1,6 +1,6 @@
 """The answerable verdict: yes / partial / no, with a reason.
 
-Research (docs/research/2026/04_context.md): with insufficient context,
+Research (docs/research/04_context.md): with insufficient context,
 models guess instead of declining; one model's wrong answers rose from 10.2%
 to 66.1%. The data.world ontology check turned errors into "I don't know".
 So every pack and every agent answer carries an explicit verdict, and a "no"

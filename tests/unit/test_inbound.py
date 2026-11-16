@@ -2,7 +2,7 @@
 
 The Entity Investigator asks "tell me about customer c1"; the links run
 Order -> Customer, so it needs edges INTO the customer, with a SQL limit so a
-super-node stays cheap (docs/research/2026/02_knowledge_graph.md).
+super-node stays cheap (docs/research/02_knowledge_graph.md).
 """
 
 from __future__ import annotations

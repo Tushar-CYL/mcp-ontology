@@ -7,7 +7,7 @@ now calls its multi-agent Supervisor "legacy". So Strata's agent types are
 presets: a least-privilege tool subset, a job, guardrails and an output
 template. The same subset is the agent's MCP scope for external clients.
 
-See docs/research/2026/05_agents.md and REPORT.md ("Agent types Strata
+See docs/research/05_agents.md and REPORT.md ("Agent types Strata
 should offer").
 """
 
@@ -39,7 +39,8 @@ PRESETS: dict[str, dict] = {
                "dimension.",
         "layers": ["semantic"],
         "tools": [*_GENERAL, "list_metrics", "get_metric", "evaluate_metric",
-                  "validate_sql", "check_answerable"],
+                  "validate_sql", "check_answerable",
+                  "list_business_metrics", "get_business_metric"],
         "guardrails": ["Approved metrics in scope only", "Refuses and names "
                        "the nearest approved metric otherwise",
                        "Checks hand-written SQL with validate_sql"],
@@ -56,7 +57,8 @@ PRESETS: dict[str, dict] = {
                "order: what it is linked to and the evidence behind it.",
         "layers": ["graph", "ontology", "context"],
         "tools": [*_GENERAL, "list_entities", "describe_table",
-                  "graph_neighbours", "get_entity_context", "resolve_entity"],
+                  "graph_neighbours", "get_entity_context", "resolve_entity",
+                  "find_entity", "get_entity", "how_connected", "context_for_question"],
         "guardrails": ["One source only", "At most 2 hops and 25 listed "
                        "links per relation", "Personal data removed"],
         "output": "What the entity is, what it links to, and cited facts.",
@@ -75,7 +77,9 @@ PRESETS: dict[str, dict] = {
                   "get_metric", "evaluate_metric", "validate_sql",
                   "check_answerable", "get_context", "explain_citation",
                   "get_ontology", "list_concepts", "get_concept", "map_column", "resolve_entity",
-                  "get_contract", "validate_rules", "ontology_version", "ask_question"],
+                  "get_contract", "validate_rules", "ontology_version", "ask_question",
+                  "find_entity", "get_entity", "how_connected", "context_for_question",
+                  "list_business_metrics", "get_business_metric"],
         "guardrails": ["Every number comes from an approved metric",
                        "Answers only when the evidence is sufficient; says "
                        "so plainly otherwise", "Read-only"],

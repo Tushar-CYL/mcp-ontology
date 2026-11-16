@@ -2,16 +2,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   Bot,
-  ChartColumn,
   ChevronRight,
-  FileText,
   Sparkles,
-  Layers,
+  Waypoints,
+  Brain,
+  Scale,
   Menu,
-  Network,
   Plug,
   X,
 } from 'lucide-react'
+import { api } from '../api/client'
 import { useSource } from '../context/SourceContext'
 import { cx } from '../utils/cx'
 
@@ -23,15 +23,11 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   { label: 'Connect', items: [{ to: '/onboarding', label: 'Data sources', icon: Plug }] },
   {
     label: 'Accelerators',
-    items: [{ to: '/tools/ontology', label: 'Ontology', icon: Sparkles }],
-  },
-  {
-    label: 'The four layers',
     items: [
-      { to: '/layers/ontology', label: '1 Ontology', icon: Layers },
-      { to: '/layers/graph', label: '2 Knowledge graph', icon: Network },
-      { to: '/layers/semantic', label: '3 Semantic', icon: ChartColumn },
-      { to: '/layers/context', label: '4 Context', icon: FileText },
+      { to: '/tools/ontology', label: 'Ontology', icon: Sparkles },
+      { to: '/tools/graph', label: 'Knowledge graph', icon: Waypoints },
+      { to: '/tools/semantic', label: 'Semantic', icon: Scale },
+      { to: '/tools/context', label: 'Context', icon: Brain },
     ],
   },
   { label: 'Use them', items: [{ to: '/agents', label: 'Agents', icon: Bot }] },
@@ -126,6 +122,12 @@ export function AppShell() {
               No API key in the browser. The AI sees column names and a few sample values, never whole tables.
             </p>
           </div>
+          {health?.auth?.required ? (
+            <button type="button" className="sidebar__signout"
+              onClick={() => { void api.logout().finally(() => window.location.assign('/login')) }}>
+              Sign out
+            </button>
+          ) : null}
           <p className="sidebar__version">Strata · v1.0</p>
         </div>
       </aside>

@@ -1,7 +1,7 @@
 """Metric synonyms: the words people use for a governed metric.
 
 Snowflake, Databricks and dbt all attach synonyms to the semantic object
-(research: docs/research/2026/03_semantic_layer.md). In Strata they live in
+(research: docs/research/03_semantic_layer.md). In Strata they live in
 their own table so re-seeding a definition never wipes them, and detection
 uses them so "sales" finds Revenue. A synonym may point at one metric only.
 """

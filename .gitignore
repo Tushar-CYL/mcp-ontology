@@ -1,5 +1,4 @@
 data/*
-!data/README.md
 *.duckdb
 __pycache__/
 *.pyc
@@ -14,7 +13,6 @@ __pycache__/
 
 # screenshots pasted while working, and internal notes
 /image*.png
-/data.txt
 
 # a stray npm run from the project root
 node_modules/

@@ -88,11 +88,59 @@ def pick(view: dict, question: str) -> dict:
             if other and any(s for s, t, _ in scored if t["name"] == other["name"]):
                 chosen.append((0.5, other, []))
                 names.add(other["name"])
+    # Things the question names may only meet through one it does not
+    # ("review score by seller state": reviews -> orders <- items -> sellers).
+    for bridge in _bridges(view, [t["name"] for _, t, _ in chosen]):
+        other = next((t for t in view["things"] if t["name"] == bridge), None)
+        if other:
+            chosen.append((0.25, other, []))
     unmatched = [w for w in q if w not in matched_words]
     return {"things": [{"name": t["name"], "key": t["key"], "score": s, "fields_hit": h}
                        for s, t, h in chosen],
             "coverage": round(1 - len(unmatched) / len(q), 2),
             "matched": sorted(matched_words), "unmatched": unmatched}
+
+
+MAX_BRIDGES = 3
+
+
+def _bridges(view: dict, names: list[str]) -> list[str]:
+    """The fewest extra things that connect the chosen ones through proven
+    links (shortest paths, at most MAX_BRIDGES added)."""
+    adj: dict = {}
+    for link in view.get("links") or []:
+        a, b = link.get("from_thing"), link.get("to_thing")
+        if a and b and a != b:
+            adj.setdefault(a, set()).add(b)
+            adj.setdefault(b, set()).add(a)
+    chosen = [n for n in names if n in adj]
+    if len(chosen) < 2:
+        return []
+    joined, added = {chosen[0]}, []
+    for target in chosen[1:]:
+        if target in joined:
+            continue
+        # Breadth-first from everything already joined to the next target.
+        prev = {n: None for n in joined}
+        queue = list(joined)
+        while queue and target not in prev:
+            node = queue.pop(0)
+            for nxt in sorted(adj.get(node, ())):
+                if nxt not in prev:
+                    prev[nxt] = node
+                    queue.append(nxt)
+        if target not in prev:
+            continue                       # no proven path: the AI will say so
+        path, node = [], target
+        while node is not None and node not in joined:
+            path.append(node)
+            node = prev[node]
+        extra = [p for p in path if p not in names and p not in added]
+        if len(added) + len(extra) > MAX_BRIDGES:
+            continue
+        added += extra
+        joined.update(path)
+    return added
 
 
 # ------------------------------------------------------------ catalogue
@@ -214,7 +262,10 @@ def run(graph, sql: str, limit: int, time_limit: float = TIME_LIMIT_S) -> dict:
 
 # ------------------------------------------------------------------ ask
 def ask(layer, ontology_id: str, question: str, client=None, version: int | None = None,
-        max_rows: int = MAX_ROWS) -> dict:
+        max_rows: int = MAX_ROWS, things: list[str] | None = None) -> dict:
+    """`things` lets a caller that already knows what is in scope (the
+    context engine) name the things instead of word matching; the joins
+    between them are added as usual."""
     question = str(question or "").strip()
     if not question:
         raise ValueError("ask a question")
@@ -223,7 +274,31 @@ def ask(layer, ontology_id: str, question: str, client=None, version: int | None
     max_rows = max(1, min(int(max_rows or MAX_ROWS), 500))
     graph = layer.graph
     view = simple.view(graph, ontology_id, version=version, published=True)
+    from semantic import model as sem
+    try:
+        hit = sem.match(layer, ontology_id, question)
+    except Exception:                              # noqa: BLE001 - fall back to SQL writing
+        hit = None
+    if hit and not things:
+        # Not "run": that name is this module's query runner, used below.
+        served = sem.value(layer, ontology_id, hit["metric"], by=hit["by"],
+                           filters=hit["filters"] or None, limit=max_rows)
+        cols = ([hit["by"]] if hit["by"] else []) + [hit["title"]]
+        return {"ontology": ontology_id, "version": view["version"], "question": question,
+                "coverage": 1.0, "things": [], "unknown_words": [], "sql": served["sql"],
+                "rows": served["rows"], "columns": cols, "row_count": len(served["rows"]),
+                "truncated": False, "fields_used": [], "repaired": False, "answerable": True,
+                "explanation": f"Answered by the certified metric {hit['title']}.",
+                "checks": [], "certified_metric": hit,
+                "note": "This number comes from a certified metric: the same definition every "
+                        "screen, agent and spreadsheet uses. No AI wrote this query."}
     picked = pick(view, question)
+    if things:
+        known = {t["name"]: t for t in view["things"]}
+        names = [n for n in things if n in known]
+        names += [b for b in _bridges(view, names) if b not in names]
+        picked = {**picked, "things": [{"name": n, "key": known[n]["key"], "score": 1.0,
+                                        "fields_hit": []} for n in names]}
     base = {"ontology": ontology_id, "version": view["version"], "question": question,
             "coverage": picked["coverage"], "things": [t["name"] for t in picked["things"]],
             "unknown_words": picked["unmatched"], "sql": None, "rows": [], "columns": [],

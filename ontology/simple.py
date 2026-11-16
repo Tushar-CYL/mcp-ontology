@@ -365,6 +365,41 @@ def confirmed_pct(counts: dict) -> int:
     return round(100 * counts.get("verified", 0) / total) if total else 0
 
 
+# Personal data a column holds, read from its name and the label it was
+# given (so `contact` labelled "Email address" is caught too). Direct
+# identifiers only: a name column may be a company, so it is not flagged.
+PERSONAL = (
+    ("Email", ("email", "e_mail", "email_address", "email_id", "mail_address")),
+    ("Phone number", ("phone", "phone_number", "phone_no", "telephone", "mobile_number",
+                      "mobile_no", "msisdn", "contact_number")),
+    ("Government id", ("ssn", "social_security_number", "passport", "passport_number",
+                       "passport_no", "national_id", "aadhaar", "aadhaar_number",
+                       "national_insurance_number")),
+    ("Payment card", ("credit_card", "credit_card_number", "card_number", "card_no",
+                      "cvv", "cvc", "iban")),
+    ("Date of birth", ("date_of_birth", "dob", "birth_date", "birthdate")),
+    ("Home address", ("home_address", "street_address", "address_line", "address_line_1",
+                      "address_line_2")),
+    ("IP address", ("ip_address", "ipaddress", "ip")),
+)
+
+
+def personal_kind(*texts) -> str | None:
+    """The kind of personal data a field holds, or None.
+
+    A token must END the name (`customer_email`, `phone_number`), so
+    `email_verified` (a flag) and `phone_brand` (a product) are not flagged.
+    """
+    for text in texts:
+        low = re.sub(r"[^a-z0-9]+", "_", str(text or "").lower()).strip("_")
+        if not low:
+            continue
+        for kind, tokens in PERSONAL:
+            if any(low == t or low.endswith("_" + t) for t in tokens):
+                return kind
+    return None
+
+
 def view(graph, ontology_id: str, version: int | None = None,
          published: bool = False) -> dict:
     """The ontology in plain words, for the screen, Nexus and agents.
@@ -423,6 +458,7 @@ def view(graph, ontology_id: str, version: int | None = None,
         field = {k: m.get(k) for k in ("key", "table", "column", "label", "meaning", "role",
                                        "unit", "type", "by", "check", "proof", "confidence")}
         field["role_label"] = mn.ROLES.get(m.get("role"), m.get("role"))
+        field["personal"] = personal_kind(m.get("column"), m.get("label"))
         field["links_to"] = thing_of_table.get(ref) if ref else None
         if field["links_to"] and str(field.get("proof") or "").startswith("values match"):
             # Name the target the way the screen does, not by its raw table.
@@ -652,7 +688,19 @@ def add_context(layer, ontology_id: str, text: str, client=None, by: str = "you"
             {"text": text, "by": by, "at": _now(), "method": method, "reply": reply,
              "changes": applied}, fact=True)
     version = _republish(layer, ontology_id, f"context note by {by}") if applied else None
-    return {"changes": applied, "reply": reply, "method": method, "version": version}
+    # A note can also name a business number ("revenue = Gross Amount"): the
+    # semantic layer learns the word, so every layer finds the same metric.
+    learned = []
+    try:
+        from semantic import model as sem
+        learned = sem.learn_from_note(layer, ontology_id, text)
+    except Exception:                             # noqa: BLE001 - the note itself is saved
+        learned = []
+    if learned and not applied:
+        reply = "; ".join(f"\"{x['word']}\" now means the metric {x['metric'].replace('_', ' ')}"
+                          for x in learned) + "."
+    return {"changes": applied, "reply": reply, "method": method, "version": version,
+            "learned": learned}
 
 
 def _set_field(graph, ontology_id, key, by, changes) -> None:
@@ -691,7 +739,8 @@ def for_excel(graph, ontology_id: str, version: int | None = None) -> dict:
                "Table": f["table"], "Type": f["type"],
                "Check": CHECK.get(f["check"], f["check"]), "Proof": f["proof"] or "",
                "Set by": SET_BY.get(f["by"], f["by"]),
-               "Confidence": round(float(f["confidence"] or 0), 2)}
+               "Confidence": round(float(f["confidence"] or 0), 2),
+               "Personal data": f.get("personal") or ""}
               for t in v["things"] for f in t["fields"]]
     links = [{"From": link["from_thing"], "To": link["to_thing"], "Meaning": link["label"],
               "Cardinality": link["cardinality"], "From column": link["from"],
@@ -705,7 +754,18 @@ def for_excel(graph, ontology_id: str, version: int | None = None) -> dict:
                          "published_at": v["published_at"],
                          "confirmed_pct": v["summary"]["confirmed_pct"],
                          "fields_checked": v["summary"]["checks"]},
-            "things": things, "fields": fields, "links": links, "calculations": calcs}
+            "things": things, "fields": fields, "links": links, "calculations": calcs,
+            "metrics": _certified_rows(graph, ontology_id)}
+
+
+def _certified_rows(graph, ontology_id: str) -> list[dict]:
+    """The semantic layer's certified metrics as one flat table for Excel."""
+    from ontology.ossie import certified_metrics
+    return [{"Metric": m["title"], "Means": m["meaning"], "Formula": m["formula"],
+             "Filters": "; ".join(m["filters"]), "Thing": m["thing"] or "", "Unit": m["unit"],
+             "Also called": ", ".join(m["synonyms"]), "Owner": m["owner"],
+             "Certified": str(m["certified_at"] or "")[:10]}
+            for m in certified_metrics(graph, ontology_id)]
 
 
 def to_xlsx(graph, ontology_id: str, version: int | None = None) -> bytes:
@@ -725,5 +785,7 @@ def to_xlsx(graph, ontology_id: str, version: int | None = None) -> bytes:
               ("Links", data["links"])]
     if data["calculations"]:
         sheets.append(("Calculations", data["calculations"]))
+    if data.get("metrics"):
+        sheets.append(("Metrics", data["metrics"]))
     sheets.append(("About", about))
     return workbook(sheets)

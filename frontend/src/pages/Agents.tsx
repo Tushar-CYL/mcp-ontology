@@ -129,7 +129,7 @@ export function Agents() {
   if (!source) {
     return (
       <div className="page">
-        <PageHeader eyebrow="Use the four layers" title="Agent connections" />
+        <PageHeader eyebrow="Use your data" title="Agent connections" />
         <NoSourceState description="Connect a source first. An agent's scope is a source plus the approved metrics it may read." />
       </div>
     )
@@ -138,7 +138,7 @@ export function Agents() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Use the four layers"
+        eyebrow="Use your data"
         title="Agents"
         description="Six agent types, each built on the layers it needs. Try one here, or connect an agent you built elsewhere (Claude, Cursor, Copilot) over MCP. Every answer says which layers it used, and says plainly when the evidence is not enough."
       />

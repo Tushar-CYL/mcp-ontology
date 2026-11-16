@@ -143,6 +143,18 @@ class TestCloudUrls:
 
     def test_unknown_url_scheme_lists_what_is_supported(self):
         with pytest.raises(SourceError, match="snowflake"):
+            connect("nosuchdb://user:pass@host/db")
+
+    def test_known_database_without_its_driver_says_what_to_install(self, monkeypatch):
+        import builtins
+        real = builtins.__import__
+
+        def no_oracle(name, *a, **k):
+            if name.split(".")[0] in ("oracledb", "cx_Oracle"):
+                raise ModuleNotFoundError(f"No module named '{name}'", name=name)
+            return real(name, *a, **k)
+        monkeypatch.setattr(builtins, "__import__", no_oracle)
+        with pytest.raises(SourceError, match=r"pip install oracledb"):
             connect("oracle://user:pass@host/db")
 
 

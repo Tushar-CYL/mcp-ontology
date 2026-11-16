@@ -46,7 +46,8 @@ INSTRUCTIONS = (
     "records in different systems are the same customer, or which rules the "
     "data breaks, use the published enterprise ontology: get_ontology first "
     "(every thing and field in plain words), ask_question for a number or a list "
-    "computed from the data (it returns the SQL it ran), then list_concepts, "
+    "computed from the data (it returns the SQL it ran), find_entity / get_entity / "
+    "how_connected for one record and its connections (the knowledge graph), then list_concepts, "
     "get_concept, map_column, resolve_entity, get_contract, validate_rules, "
     "ontology_version (they read one pinned version). Use search, list_entities and "
     "describe_table for meaning, list_metrics / get_metric / evaluate_metric "
@@ -146,6 +147,45 @@ TOOLS = [
            "max_rows": {"type": "integer", "minimum": 1, "maximum": 500},
            **_ONTOLOGY}, ["question"]),
     # ------------------------------------------------------------ graph
+    _tool("Graph", "find_entity",
+          "Find records in the knowledge graph of the published ontology by id or "
+          "name (e.g. 'Customer 17', 'SKU002'). Returns each match's thing, `set` "
+          "and `key` for get_entity / how_connected. Personal data is masked.",
+          {"query": {"type": "string"}, "thing": {"type": "string"}, **_ONTOLOGY}, ["query"]),
+    _tool("Graph", "get_entity",
+          "One record's 360 from the knowledge graph: its fields in plain words "
+          "(personal data masked) and every connection in both directions with "
+          "counts and examples - e.g. a customer's orders, an order's customer. "
+          "Broken links (pointing at a record that does not exist) are flagged.",
+          {"set": {"type": "string"}, "key": {"type": "string"}, **_ONTOLOGY},
+          ["set", "key"]),
+    _tool("Graph", "how_connected",
+          "How two records are connected: the shortest chain of proven links "
+          "between them (up to 6 steps), each step named in plain words, or "
+          "'no connection' - never a guess.",
+          {"from_set": {"type": "string"}, "from_key": {"type": "string"},
+           "to_set": {"type": "string"}, "to_key": {"type": "string"},
+           "max_hops": {"type": "integer", "minimum": 1, "maximum": 6}, **_ONTOLOGY},
+          ["from_set", "from_key", "to_set", "to_key"]),
+    _tool("Semantic", "list_business_metrics",
+          "The CERTIFIED business metrics of the ontology: one governed definition per "
+          "business word (e.g. Revenue), with its current value, synonyms, owner and the "
+          "dimensions it can be broken down by. Use these numbers before writing any SQL.",
+          dict(_ONTOLOGY)),
+    _tool("Semantic", "get_business_metric",
+          "One certified metric's value, optionally broken down `by` one of its dimensions, "
+          "with its receipt: the definition in words, formula, filters, joins (never "
+          "double-counting), owner, certified date and the SQL that ran.",
+          {"metric": {"type": "string"}, "by": {"type": "string"}, **_ONTOLOGY}, ["metric"]),
+    _tool("Context", "context_for_question",
+          "The context for one question, built the ontology way: the question's words "
+          "linked to records, things and fields; only proven links followed (2 steps); "
+          "facts gathered with a citation each, failed checks quarantined, packed to a "
+          "size budget. Returns the numbered facts, the path followed, what was not "
+          "looked at, and the ontology version. Answer from these facts only and cite them.",
+          {"question": {"type": "string"},
+           "budget_chars": {"type": "integer", "minimum": 200, "maximum": 8000}, **_ONTOLOGY},
+          ["question"]),
     _tool("Graph", "graph_neighbours",
           "What one entity is linked to, with edge provenance.",
           {"class": {"type": "string"}, "key": {"type": "string"},
@@ -608,6 +648,108 @@ def _ask_question(layer, args, scope):
                    version=version, max_rows=int(args.get("max_rows") or ask.MAX_ROWS))
 
 
+def _graph_set_allowed(layer, oid: str, set_name: str, scope) -> None:
+    """A set must belong to the ontology and (for a scoped agent) its source."""
+    if scope is None:
+        return
+    source = set_name.split(":", 1)[1] if set_name.startswith("graph:") else set_name.split(".", 1)[0]
+    if source not in set(scope.get("sources") or []):
+        raise Forbidden(f"forbidden: {set_name!r} is outside this agent's sources")
+
+
+def _find_entity(layer, args, scope):
+    from knowledge_graph import explore as kg
+    oid, _ = _ontology(layer, args, scope)
+    out = kg.search(layer, oid, str(args.get("query") or ""), thing=args.get("thing") or None)
+    if scope is not None:
+        allowed = set(scope.get("sources") or [])
+        out["results"] = [r for r in out["results"]
+                          if (r["set"].split(":", 1)[1] if r["set"].startswith("graph:")
+                              else r["set"].split(".", 1)[0]) in allowed]
+    return {"ontology": oid, **out}
+
+
+def _get_entity(layer, args, scope):
+    from knowledge_graph import explore as kg
+    oid, _ = _ontology(layer, args, scope)
+    set_name = str(args.get("set") or "")
+    _graph_set_allowed(layer, oid, set_name, scope)
+    out = kg.entity(layer, oid, set_name, str(args.get("key") or ""))
+    if scope is not None:
+        allowed = set(scope.get("sources") or [])
+        out["connections"] = [c for c in out["connections"]
+                              if (c["set"].split(":", 1)[1] if c["set"].startswith("graph:")
+                                  else c["set"].split(".", 1)[0]) in allowed]
+    return {"ontology": oid, **out}
+
+
+def _how_connected(layer, args, scope):
+    from knowledge_graph import explore as kg
+    oid, _ = _ontology(layer, args, scope)
+    a = (str(args.get("from_set") or ""), str(args.get("from_key") or ""))
+    b = (str(args.get("to_set") or ""), str(args.get("to_key") or ""))
+    _graph_set_allowed(layer, oid, a[0], scope)
+    _graph_set_allowed(layer, oid, b[0], scope)
+    out = kg.path(layer, oid, a, b, max_hops=int(args.get("max_hops") or kg.PATH_MAX_HOPS))
+    if scope is not None and out.get("found"):
+        for step in out["steps"]:
+            _graph_set_allowed(layer, oid, step["set"], scope)
+    return {"ontology": oid, **out}
+
+
+def _list_business_metrics(layer, args, scope):
+    from semantic import model as sem
+    from semantic import definitions as metric_defs
+    oid, _ = _ontology(layer, args, scope)
+    out = []
+    for d in metric_defs.list_definitions(layer.graph, sem.source_of(oid)):
+        if d["status"] != "approved":
+            continue
+        c = sem.card(layer, oid, d["name"])
+        out.append({"metric": c["name"], "title": c["title"], "value": c["value"], "unit": c["unit"],
+                    "synonyms": c["synonyms"], "owner": c["owner"], "meaning": c["words"],
+                    "by": [x["name"] for x in c["dims"]], "drift": c["drift"]})
+    return {"ontology": oid, "metrics": out,
+            "note": "Only certified metrics are listed. Proposals are not served to agents."}
+
+
+def _get_business_metric(layer, args, scope):
+    from semantic import model as sem
+    from semantic import definitions as metric_defs
+    oid, _ = _ontology(layer, args, scope)
+    name = str(args.get("metric") or "")
+    d = metric_defs.get_definition(layer.graph, name, sem.source_of(oid))
+    if d is None or d["status"] != "approved":
+        raise KeyError(f"no certified metric {name!r}; call list_business_metrics")
+    run = sem.value(layer, oid, name, by=args.get("by") or None, limit=ROW_CAP)
+    return {"ontology": oid, "metric": name, "title": d["title"], "columns": run["columns"],
+            "rows": run["rows"], "receipt": sem.receipt(layer, oid, name),
+            "drift": sem.drift(layer, oid, name)}
+
+
+def _context_for_question(layer, args, scope):
+    from context import engine as ctx
+    oid, _ = _ontology(layer, args, scope)
+    out = ctx.build(layer, oid, str(args.get("question") or ""),
+                    budget_chars=int(args.get("budget_chars") or ctx.BUDGET), client=None)
+    if scope is not None:
+        allowed = set(scope.get("sources") or [])
+        for r in out["steps"]["understand"]["records"]:
+            source = r["set"].split(":", 1)[1] if r["set"].startswith("graph:") else r["set"].split(".", 1)[0]
+            if source not in allowed:
+                raise Forbidden(f"forbidden: {r['set']!r} is outside this agent's sources")
+    f = out["steps"]["facts"]
+    return {"ontology": out["ontology"], "data_as_of": out["data_as_of"],
+            "question": out["question"], "context": out["context"], "facts": f["kept"],
+            "dropped": len(f["dropped"]), "quarantined": f["quarantined"],
+            "linked": {k: out["steps"]["understand"][k] for k in ("records", "things", "fields",
+                                                                  "unknown", "ambiguous")},
+            "path": out["steps"]["follow"]["walks"], "joins": out["steps"]["follow"]["joins"],
+            "not_looked_at": out["steps"]["follow"]["not_looked_at"],
+            "note": "Answer only from these facts and cite them like [2]. Say so when they "
+                    "do not answer the question."}
+
+
 def _ontology_version(layer, args, scope):
     from ontology import publish as pub
     oid, version = _ontology(layer, args, scope)
@@ -624,6 +766,12 @@ _HANDLERS = {
     "validate_rules": _validate_rules,
     "ontology_version": _ontology_version,
     "ask_question": _ask_question,
+    "find_entity": _find_entity,
+    "context_for_question": _context_for_question,
+    "list_business_metrics": _list_business_metrics,
+    "get_business_metric": _get_business_metric,
+    "get_entity": _get_entity,
+    "how_connected": _how_connected,
     "list_sources": _list_sources,
     "check_readiness": _check_readiness,
     "check_answerable": _check_answerable,

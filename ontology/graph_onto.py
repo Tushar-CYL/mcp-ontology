@@ -25,6 +25,7 @@ tools need no special case.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import uuid
@@ -60,7 +61,7 @@ def split_relation(name: str) -> tuple[str, str | None]:
     ('uses', 'OtherEntity'); 'related' -> ('related', None)."""
     m = TYPE_SUFFIX.match(local(name))
     if not m:
-        return local(name).replace("-", " ").replace("_", " "), None
+        return humanize(name), None           # WORKS_AT -> "works at"
     return m.group(1).replace("-", " ").replace("_", " ").strip(), m.group(2)
 
 
@@ -241,7 +242,7 @@ def analyse(layer, source: str) -> dict:
             f"x.tp = '{str(t['raw']).replace(chr(39), chr(39) * 2)}'"
         t["samples"] = [str(r[0]) for r in g.sql(
             f"SELECT e.label FROM ({q['entities']}) e LEFT JOIN {tmp} x ON x.id = e.id"
-            f" WHERE {cond} AND e.label IS NOT NULL LIMIT {SAMPLES}")]
+            f" WHERE {cond} AND e.label IS NOT NULL ORDER BY e.label LIMIT {SAMPLES}")]
 
     # Domain and range of every relation: the majority type of its ends.
     ends = g.sql(f"""
@@ -343,10 +344,25 @@ def build(layer, ontology_id: str, source: str, client=None, domain: str = "",
     use_ai = client is not None and not getattr(client, "mock", True) and mn.ai_enabled()
     ai, ai_error = {}, None
     if use_ai and found["types"]:
-        try:
-            ai = describe_types(client, domain, found)
-        except Exception as exc:                  # noqa: BLE001 - template fallback
-            ai_error = f"{type(exc).__name__}: {str(exc)[:160]}"
+        # The same types with the same samples get the same descriptions on
+        # every rebuild: the answer is cached by a fingerprint of the prompt
+        # facts, so wording only changes when the data (or the domain) does.
+        fingerprint = hashlib.sha1(json.dumps({
+            # Sorted: relations with equal counts come back in varying order.
+            "domain": domain, "types": sorted((t["type"], t["entities"], t["samples"])
+                                              for t in found["types"].values()),
+            "rels": sorted((r["label"], r["domain"], r["range"]) for r in found["relations"])[:200],
+        }, sort_keys=True, default=str).encode()).hexdigest()
+        cached = reg.get_item(g, ontology_id, "meaning", f"ai:graph:{source}", missing_ok=True)
+        if cached and cached["payload"].get("fingerprint") == fingerprint:
+            ai = cached["payload"]["answer"]
+        else:
+            try:
+                ai = describe_types(client, domain, found)
+                reg.put(g, ontology_id, "meaning", f"ai:graph:{source}",
+                        {"fingerprint": fingerprint, "answer": ai}, fact=True)
+            except Exception as exc:              # noqa: BLE001 - template fallback
+                ai_error = f"{type(exc).__name__}: {str(exc)[:160]}"
     how = {"explicit": "their declared type",
            "instance_of": "their instance-of relation",
            "relation_names": "the relations that point at them",

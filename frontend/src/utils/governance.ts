@@ -27,12 +27,12 @@ export function verdictTone(verdict: string | undefined): 'teal' | 'amber' | 'ro
   return 'neutral'
 }
 
-/** The path every source takes: connect it, four layers, then agents. */
+/** The path every source takes: connect it, the three tools, then agents. */
 export const LAYER_FLOW = [
   { label: 'Source', to: '/onboarding', layer: null },
-  { label: '1 Ontology', to: '/layers/ontology', layer: 'ontology' },
-  { label: '2 Knowledge graph', to: '/layers/graph', layer: 'graph' },
-  { label: '3 Semantic', to: '/layers/semantic', layer: 'semantic' },
-  { label: '4 Context', to: '/layers/context', layer: 'context' },
+  { label: 'Ontology', to: '/tools/ontology', layer: 'ontology' },
+  { label: 'Knowledge graph', to: '/tools/graph', layer: 'graph' },
+  { label: 'Semantic', to: '/tools/semantic', layer: 'semantic' },
+  { label: 'Context', to: '/tools/context', layer: 'context' },
   { label: 'Agents', to: '/agents', layer: null },
 ] as const

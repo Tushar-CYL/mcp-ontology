@@ -1,6 +1,6 @@
 """Agent presets: one orchestrator, six small read-mostly tool bundles.
 
-Research (docs/research/2026/05_agents.md): Snowflake, Fabric, Databricks and
+Research (docs/research/05_agents.md): Snowflake, Fabric, Databricks and
 Palantir all run one orchestrating agent over typed tools; none sells
 separate "graph" or "guide" agents. Strata's six agent types are presets of
 one runtime, each a least-privilege tool subset that maps to an MCP scope.

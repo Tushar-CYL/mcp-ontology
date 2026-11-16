@@ -27,7 +27,10 @@ KINDS = ("profile", "concept", "member", "property", "mapping", "relationship",
          "rule", "action", "contract", "drift", "finding",
          # The simple flow: plain meanings (AI, metadata or a person), the
          # context notes people add, and imported metadata files.
-         "meaning", "note", "metadata")
+         "meaning", "note", "metadata",
+         # The semantic layer: metric facts, settled business words, and
+         # questions a person verified (re-checked after every rebuild).
+         "metric", "decision", "verified")
 ROLES = ("source_system", "mdm_hub", "data_mart", "reference")
 DECISIONS = ("approved", "rejected", "edited")
 USER_ROLES = ("viewer", "editor", "approver")
@@ -130,6 +133,14 @@ def delete_ontology(graph, ontology_id: str) -> None:
         for table in tables:
             graph.con.execute(f'DELETE FROM "{table}" WHERE ontology_id = ?', [ontology_id])
         graph.con.execute("DELETE FROM eo_ontologies WHERE id = ?", [ontology_id])
+        # Its metrics live in the semantic layer's own table, under onto:<id>.
+        try:
+            graph.con.execute("DELETE FROM metric_definitions WHERE source_id = ?",
+                              [f"onto:{ontology_id}"])
+            graph.con.execute("DELETE FROM metric_synonyms WHERE source_id = ?",
+                              [f"onto:{ontology_id}"])
+        except Exception:                          # noqa: BLE001 - table may not exist yet
+            pass
         try:
             graph.con.execute("CHECKPOINT")     # write the deletion to the file now
         except Exception:                        # noqa: BLE001 - busy; DuckDB will later

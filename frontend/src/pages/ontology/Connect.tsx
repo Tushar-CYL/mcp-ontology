@@ -77,7 +77,7 @@ export function Connect({ ai, onBuilt }: { ai: OntoAi | undefined; onBuilt: (oid
 
   return (
     <div className="onto-connect">
-      <Card title="Your data" subtitle="Any data: a CSV or Excel file, a folder of files, a database file, or a database URL.">
+      <Card title="Your data" subtitle="Any data: files (CSV, Excel, JSON, Parquet, Delta), database files (SQLite, DuckDB, Access), or a database URL: postgres://, mysql://, mssql://, oracle://, odbc://, mongodb://, neo4j://, snowflake://, databricks://, s3://.">
         {sources.length ? (
           <div className="onto-sources" role="group" aria-label="Connected sources">
             {sources.map((s) => (
@@ -92,7 +92,7 @@ export function Connect({ ai, onBuilt }: { ai: OntoAi | undefined; onBuilt: (oid
         ) : <p className="muted">Nothing connected yet. Add a path below.</p>}
         <div className="onto-add">
           <TextInput label="Add a file, folder or database" value={pathDraft}
-            placeholder="D:\data\sales.csv   or   D:\data\shop\   or   postgres://user@host/db"
+            placeholder="D:\data\sales.csv   or   D:\data\shop\   or   postgres://user:pw@host/db   or   mongodb://host/db"
             onChange={(e) => setPathDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') addPath() }} />
           <Button icon={<Plus size={15} />} onClick={addPath} disabled={!pathDraft.trim()}>Add</Button>

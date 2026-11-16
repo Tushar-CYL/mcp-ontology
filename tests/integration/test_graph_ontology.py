@@ -104,6 +104,22 @@ def test_knowledge_graph_gets_types_links_and_hierarchy(tmp_path):
     assert any(r["Meaning"] == "Method solves Task" for r in data["links"])
 
 
+def test_graph_descriptions_are_cached_so_rebuilds_do_not_reword(tmp_path):
+    layer = MiddleLayer(str(tmp_path / "kg.duckdb"))
+    layer.add_source(str(write_cskg(tmp_path / "cskg")), source="kg")
+    ai = TypeAI()
+    oid = simple.create_and_build(layer, "KG", ["kg"], client=ai)["ontology"]
+    first = {t["name"]: t["description"] for t in simple.view(layer.graph, oid)["things"]}
+    assert ai.calls == 1
+    simple.build(layer, oid, client=ai)                 # same data: no new call, same words
+    assert ai.calls == 1
+    assert {t["name"]: t["description"] for t in simple.view(layer.graph, oid)["things"]} == first
+    simple.add_context(layer, oid, "Method should be called Technique")   # a person's word wins
+    simple.build(layer, oid, client=ai)
+    assert ai.calls == 1
+    assert "Technique" in {t["name"] for t in simple.view(layer.graph, oid)["things"]}
+
+
 def test_without_ai_names_come_from_the_relations(tmp_path):
     layer = MiddleLayer(str(tmp_path / "kg.duckdb"))
     layer.add_source(str(write_cskg(tmp_path / "cskg")), source="kg")

@@ -80,8 +80,14 @@ class AskRequest(BaseModel):
 def register(app, platform, error) -> None:
 
     def guard(fn):
+        from agent.llm import AgentLLMError
         try:
             return fn()
+        except AgentLLMError as exc:
+            if exc.rate_limited:
+                raise error(503, "AIBusy", "The AI service is busy right now (too many "
+                            "requests). Wait a minute and try again.") from exc
+            raise error(502, "AIUnavailable", f"The AI service did not answer: {exc}") from exc
         except PermissionError as exc:
             raise error(403, "Forbidden", str(exc)) from exc
         except KeyError as exc:
@@ -181,6 +187,17 @@ def register(app, platform, error) -> None:
                                                by=body.by or "you"))
         return {**out, "ontology": full_view(layer.graph, oid)}
 
+    @app.get("/api/onto/{oid}/suggest")
+    def onto_suggest(oid: str, request: Request, kind: str = "note", ai: bool = True):
+        """Suggestions from this data for every layer: note (Add context),
+        ask (questions), metric (define in words), search (values to find).
+        `ai=false` returns the data's own suggestions at once; with the AI
+        they are picked and completed, and cached until the ontology changes."""
+        from ontology import suggest
+        layer = platform(request).layer
+        guard(lambda: reg.get(layer.graph, oid))
+        return guard(lambda: suggest.suggest(layer, oid, kind, client=ai_client() if ai else None))
+
     @app.put("/api/onto/{oid}/fields")
     def onto_field(oid: str, request: Request, body: FieldEdit):
         layer = platform(request).layer
@@ -236,7 +253,24 @@ def register(app, platform, error) -> None:
             "ontology": oid, "version": v["version"],
             "nexus": {"url": f"{base}/api/onto/{oid}/nexus",
                       "excel": f"{base}/api/onto/{oid}/excel",
-                      "tables": ["things", "fields", "links", "calculations"]},
+                      "tables": ["things", "fields", "links", "calculations"],
+                      # Excel's own Data > Get Data > From Other Sources > Blank
+                      # Query. Reads the live link; refresh = latest version.
+                      "power_query": "\n".join([
+                          "let",
+                          f"    Source = Json.Document(Web.Contents(\"{base}/api/onto/{oid}/nexus\")),",
+                          "    Fields = Table.FromRecords(Source[fields])",
+                          "in",
+                          "    Fields"]),
+                      "contract": {
+                          "things": ["Thing", "Description", "Records", "Fields", "Tables", "Set by"],
+                          "fields": ["Thing", "Field", "Meaning", "Role", "Unit", "Links to", "Column",
+                                     "Table", "Type", "Check", "Proof", "Set by", "Confidence"],
+                          "links": ["From", "To", "Meaning", "Cardinality", "From column", "To column",
+                                    "Match", "Proof"],
+                          "calculations": ["Thing", "Calculation", "Formula", "Description"],
+                          "ontology": ["id", "name", "version", "published_at", "confirmed_pct",
+                                       "fields_checked"]}},
             "agents": {"mcp_url": mcp, "tool": "get_ontology",
                        "arguments": {"ontology": oid},
                        "claude_code": f"claude mcp add --transport http strata {mcp} "
