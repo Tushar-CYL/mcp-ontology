@@ -2,6 +2,7 @@
 
   POST /api/ctx/{id}/build      question -> linked words, followed graph,
                                 checked facts, the pack and the answer
+  POST /api/ctx/{id}/pack       the Context Pack only (open format), for any AI
   POST /api/ctx/{id}/feedback   "this answer is wrong because ..." -> a note
                                 on the ontology, so the next build uses it
 """
@@ -50,6 +51,13 @@ def register(app, platform, error) -> None:
     def ctx_build(oid: str, request: Request, body: BuildRequest):
         return guard(lambda: ctx.build(platform(request).layer, oid, body.question,
                                        budget_chars=body.budget_chars, client=ai_client()))
+
+    @app.post("/api/ctx/{oid}/pack")
+    def ctx_pack(oid: str, request: Request, body: BuildRequest):
+        """Only the Context Pack (open format), no AI answer: for your own model."""
+        out = guard(lambda: ctx.build(platform(request).layer, oid, body.question,
+                                      budget_chars=body.budget_chars, client=None))
+        return ctx.to_pack(out)
 
     @app.post("/api/ctx/{oid}/feedback")
     def ctx_feedback(oid: str, request: Request, body: FeedbackRequest):

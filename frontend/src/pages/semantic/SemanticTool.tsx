@@ -10,6 +10,7 @@ import { ErrorState } from '../../components/ErrorState'
 import { LoadingState } from '../../components/LoadingState'
 import { PageHeader } from '../../components/PageHeader'
 import { SuggestionChips } from '../../components/SuggestionChips'
+import { UseElsewhere } from '../../components/UseElsewhere'
 import { useToast } from '../../context/ToastContext'
 import { useAsync } from '../../hooks/useAsync'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
@@ -120,6 +121,8 @@ function Workspace({ oid, name, choices, onSwitch }: {
       <section className="sem-grid">{proposed.map((m) => <MetricCard key={m.name} m={m} active={open === m.name} onOpen={() => setOpen(m.name)} />)}</section>
 
       <AddInWords oid={oid} refresh={o.metrics.length} onAdded={(n) => { reload(); setOpen(n) }} />
+
+      <UseElsewhere layer="semantic" oid={oid} />
     </div>
   )
 }

@@ -37,6 +37,10 @@ HUB_SHARE = 0.2            # one parent holding this share of a link is a hub
 HUB_MIN_CHILDREN = 50
 
 
+MODEL_TTL_S = 300          # a live database's columns are re-read at least this often
+OVERVIEW_TTL_S = 60        # and its record counts
+
+
 class GraphError(ValueError):
     """A request the graph cannot answer, said in plain words."""
 
@@ -48,7 +52,17 @@ def _columns(graph, ref: str) -> list[str]:
 
 def model(layer, ontology_id: str) -> dict:
     """Entity sets (one per table of a thing) and connections (one per link),
-    with the SQL needed to read them."""
+    with the SQL needed to read them. Remembered while the ontology and its
+    sources are unchanged (ontology/cache.py): it costs one DESCRIBE per
+    table, and one question used to rebuild it a dozen times."""
+    from ontology import cache
+    from ontology import registry as reg
+    reg.get(layer.graph, ontology_id)
+    return cache.remember(layer.graph, "kg.model", ontology_id, (), lambda: _model(layer, ontology_id),
+                          keep=lambda m: not m["problems"], ttl=MODEL_TTL_S)
+
+
+def _model(layer, ontology_id: str) -> dict:
     graph = layer.graph
     v = simple.view(graph, ontology_id)
     sets, graphs, problems = {}, {}, []
@@ -157,6 +171,17 @@ def _mask(kind: str, value):
 
 # --------------------------------------------------------------- overview
 def overview(layer, ontology_id: str) -> dict:
+    """Counts and graph health in plain words. Remembered for OVERVIEW_TTL_S:
+    it scans every link (0.4 s on Olist) and Context asks for it on every
+    question; a live database's counts are at most that old."""
+    from ontology import cache
+    return cache.remember(layer.graph, "kg.overview", ontology_id, (),
+                          lambda: _overview(layer, ontology_id),
+                          keep=lambda o: not any(h["kind"] == "unreadable" for h in o["health"]),
+                          ttl=OVERVIEW_TTL_S)
+
+
+def _overview(layer, ontology_id: str) -> dict:
     m = model(layer, ontology_id)
     g = layer.graph
     things = {}
@@ -727,6 +752,119 @@ def export_neo4j(layer, ontology_id: str, folder: Path) -> Path:
         for name in files:
             z.write(folder / name, name)
     return out
+
+
+RDF_BASE = "https://strata.local/kg/"
+
+
+def _iri_part(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_\-]", "_", str(text)).strip("_") or "x"
+
+
+def _nt_literal_sql(expr: str) -> str:
+    """SQL turning a column into an N-Triples literal: the text in double
+    quotes with backslash, quote, tab and line breaks escaped, so any value
+    is a valid line."""
+    # chr(92) is the backslash, chr(34) the double quote: no escaping games.
+    bs = "chr(92)"
+    return (f"chr(34) || replace(replace(replace(replace(replace(CAST({expr} AS VARCHAR), "
+            f"{bs}, {bs} || {bs}), chr(34), {bs} || chr(34)), chr(10), {bs} || 'n'), "
+            f"chr(13), {bs} || 'r'), chr(9), {bs} || 't') || chr(34)")
+
+
+def export_rdf(layer, ontology_id: str, dest: Path) -> Path:
+    """The knowledge graph as RDF N-Triples: one node per record, typed by its
+    thing, its fields as values and every proven link as an edge. Loads into
+    any triple store (GraphDB, Stardog, Neptune, Jena, rdflib). Personal-data
+    columns are left out. Streamed by DuckDB, so a big table never sits in
+    Python. Returns the file path."""
+    m = model(layer, ontology_id)
+    g = layer.graph
+    base = f"{RDF_BASE}{_iri_part(ontology_id)}/"
+    rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
+    label = "<http://www.w3.org/2000/01/rdf-schema#label>"
+    parts = []
+
+    def node(s: dict, alias: str = "") -> str:
+        a = f"{alias}." if alias else ""
+        key = " || '|' || ".join(f"CAST({a}{qi(c)} AS VARCHAR)" for c in s["key_cols"])
+        return (f"'<{base}{_iri_part(s['thing'])}/' || url_encode({key}) || '>'")
+
+    for s in m["sets"].values():
+        if not s["key"]:
+            continue
+        cls = f"<{base}class/{_iri_part(s['thing'])}>"
+        keyok = " AND ".join(f"{qi(c)} IS NOT NULL" for c in s["key_cols"])
+        parts.append(f"SELECT {node(s)} || ' {rdf_type} {cls} .' FROM {s['ref']} WHERE {keyok}")
+        if s["label"]:
+            parts.append(f"SELECT {node(s)} || ' {label} ' || {_nt_literal_sql(qi(s['label']))} || ' .' "
+                         f"FROM {s['ref']} WHERE {keyok} AND {qi(s['label'])} IS NOT NULL")
+        for f in s["fields"]:
+            if f.get("personal") or f["column"] in s["key_cols"]:
+                continue
+            prop = f"<{base}field/{_iri_part(s['thing'])}/{_iri_part(f['column'])}>"
+            parts.append(f"SELECT {node(s)} || ' {prop} ' || {_nt_literal_sql(qi(f['column']))} || ' .' "
+                         f"FROM {s['ref']} WHERE {keyok} AND {qi(f['column'])} IS NOT NULL")
+    for link in m["links"]:
+        c, p = m["sets"][link["child"]], m["sets"][link["parent"]]
+        if not c["key"] or not p["key"]:
+            continue
+        rel = f"<{base}link/{_iri_part(link['from_thing'])}_to_{_iri_part(link['to_thing'])}>"
+        parts.append(f"""SELECT {node(c, 'c')} || ' {rel} ' || {node(p, 'p')} || ' .'
+                         FROM {c['ref']} c JOIN {p['ref']} p
+                           ON CAST(c.{qi(link['child_col'])} AS VARCHAR) = CAST(p.{qi(link['parent_col'])} AS VARCHAR)""")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if not parts:
+        dest.write_text("", encoding="utf-8")
+        return dest
+    union = " UNION ALL ".join(f"({q})" for q in parts)
+    # One line per triple, written as it is read (never the whole graph in memory).
+    eol = chr(10)
+    with g.lock, open(dest, "w", encoding="utf-8", newline=eol) as out:
+        cur = g.con.execute(union)
+        while True:
+            rows = cur.fetchmany(20_000)
+            if not rows:
+                break
+            out.write(eol.join(r[0] for r in rows) + eol)
+    return dest
+
+
+def export_json_graph(layer, ontology_id: str, limit: int = 100_000) -> dict:
+    """The graph as plain JSON {nodes, edges}, for tools that draw or load
+    graphs (Cytoscape, D3, NetworkX). Up to `limit` nodes; says if cut."""
+    m = model(layer, ontology_id)
+    g = layer.graph
+    nodes, edges, cut = [], [], False
+    for s in m["sets"].values():
+        if not s["key"]:
+            continue
+        cols = [f["column"] for f in s["fields"] if not f.get("personal") and f["column"] not in s["key_cols"]]
+        room = limit - len(nodes)
+        if room <= 0:
+            cut = True
+            break
+        sel = ", ".join([_k(s), _lbl(s)] + [qi(c) for c in cols])
+        rows = g.sql(f"SELECT {sel} FROM {s['ref']} WHERE {_k(s)} IS NOT NULL LIMIT {room + 1}")
+        if len(rows) > room:
+            cut, rows = True, rows[:room]
+        for r in rows:
+            nodes.append({"id": f"{s['member']}|{r[0]}", "thing": s["thing"], "key": _plain(r[0]),
+                          "label": _plain(r[1]) if r[1] is not None else _plain(r[0]),
+                          "fields": {c: _plain(v) for c, v in zip(cols, r[2:]) if v is not None}})
+    have = {n["id"] for n in nodes}
+    for link in m["links"]:
+        c, p = m["sets"][link["child"]], m["sets"][link["parent"]]
+        if not c["key"] or not p["key"]:
+            continue
+        for a, b in g.sql(f"""SELECT {_k(c, 'c')}, {_k(p, 'p')}
+                              FROM {c['ref']} c JOIN {p['ref']} p
+                                ON CAST(c.{qi(link['child_col'])} AS VARCHAR) = CAST(p.{qi(link['parent_col'])} AS VARCHAR)"""):
+            src, dst = f"{c['member']}|{a}", f"{p['member']}|{b}"
+            if src in have and dst in have:
+                edges.append({"source": src, "target": dst, "label": link["label"]})
+    return {"spec": "strata.graph/v1", "ontology": m["ontology"]["id"], "nodes": nodes,
+            "edges": edges, "truncated": cut}
 
 
 def _copy(g, select: str, header: list[str], dest: Path) -> None:

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://strata.local/spec/context-pack.schema.json",
+  "title": "Strata Context Pack v1",
+  "description": "What an AI may be given to answer one question: checked facts, each with its citation and source, what was left out (over budget) and what was quarantined (failed a check). Strata writes it (POST /api/ctx/{id}/pack, MCP context_for_question). Any model can answer from it; any number in the answer that is not in the facts is wrong.",
+  "type": "object",
+  "required": ["spec", "question", "facts", "budget"],
+  "properties": {
+    "spec": {"const": "strata.context/v1"},
+    "question": {"type": "string"},
+    "ontology": {"type": "object", "properties": {"id": {"type": "string"}, "name": {"type": "string"},
+      "version": {"type": ["integer", "null"]}}},
+    "data_as_of": {"type": ["string", "null"], "description": "When the data behind the facts was last loaded."},
+    "facts": {"type": "array", "items": {
+      "type": "object", "required": ["n", "text", "citation", "source"],
+      "properties": {
+        "n": {"type": "integer", "minimum": 1, "description": "Cite as [n]."},
+        "text": {"type": "string"},
+        "citation": {"type": "string", "description": "Where it comes from: table.column [key], metric:name, a link, a note."},
+        "source": {"type": "string", "description": "from the data | computed from the data | data check | meaning, checked against the data | your note"},
+        "kind": {"enum": ["record", "link", "count", "number", "check", "meaning", "note"]},
+        "weight": {"type": "number"}
+      }}},
+    "dropped": {"type": "array", "items": {"type": "object", "required": ["text"],
+      "properties": {"text": {"type": "string"}, "reason": {"type": "string"}}}},
+    "quarantined": {"type": "array", "items": {"type": "object", "required": ["what", "why"],
+      "properties": {"what": {"type": "string"}, "why": {"type": "string"}}}},
+    "metric": {"type": ["object", "null"], "description": "The certified metric that answered the number, when one did."},
+    "sql": {"type": ["string", "null"]},
+    "budget": {"type": "object", "required": ["chars", "limit"],
+      "properties": {"chars": {"type": "integer"}, "limit": {"type": "integer"}}},
+    "rules": {"type": "string"}
+  }
+}

@@ -104,8 +104,10 @@ TOOLS = [
           "START HERE for what the data means: the published ontology in plain "
           "words - business things, every field's meaning, role and unit (each "
           "checked against the data), and the links between things. Optional "
-          "`thing` returns just one.",
-          {"thing": {"type": "string"}, **_ONTOLOGY}),
+          "`thing` returns just one; `format: contract` returns the whole ontology as "
+          "a Strata Model v1 document (open JSON, to use it in another system).",
+          {"thing": {"type": "string"},
+           "format": {"type": "string", "enum": ["plain", "contract"]}, **_ONTOLOGY}),
     _tool("Ontology", "list_concepts",
           "Concepts of the published enterprise ontology (Customer, Sales Order "
           "...) with the source tables behind each and who owns it.",
@@ -542,6 +544,10 @@ def _ontology(layer, args, scope) -> tuple[str, int | None]:
         else:
             raise ValueError("pass `ontology`; available: "
                              + (", ".join(o["id"] for o in ontologies) or "none"))
+    if scope is not None and scope.get("ontology") and oid != scope["ontology"]:
+        raise Forbidden(f"forbidden: this agent works on ontology {scope['ontology']!r} only")
+    if scope is not None and scope.get("ontology") and not args.get("ontology"):
+        oid = scope["ontology"]
     onto = reg.get(layer.graph, oid)
     if scope is not None:
         allowed = set(scope.get("sources") or [])
@@ -555,6 +561,10 @@ def _ontology(layer, args, scope) -> tuple[str, int | None]:
 def _get_ontology(layer, args, scope):
     from ontology import simple
     oid, version = _ontology(layer, args, scope)
+    if args.get("format") == "contract":
+        from ontology import contract
+        v = simple.view(layer.graph, oid, version=version, published=True)
+        return contract.to_contract(layer.graph, oid, version=v["version"])
     v = simple.view(layer.graph, oid, version=version, published=True)
     want = str(args.get("thing") or "").strip().lower()
     things = [t for t in v["things"]
@@ -702,8 +712,9 @@ def _list_business_metrics(layer, args, scope):
     from semantic import definitions as metric_defs
     oid, _ = _ontology(layer, args, scope)
     out = []
+    only = set((scope or {}).get("onto_metrics") or [])
     for d in metric_defs.list_definitions(layer.graph, sem.source_of(oid)):
-        if d["status"] != "approved":
+        if d["status"] != "approved" or (only and d["name"] not in only):
             continue
         c = sem.card(layer, oid, d["name"])
         out.append({"metric": c["name"], "title": c["title"], "value": c["value"], "unit": c["unit"],
@@ -718,6 +729,9 @@ def _get_business_metric(layer, args, scope):
     from semantic import definitions as metric_defs
     oid, _ = _ontology(layer, args, scope)
     name = str(args.get("metric") or "")
+    only = set((scope or {}).get("onto_metrics") or [])
+    if only and name not in only:
+        raise Forbidden(f"forbidden: metric {name!r} is outside this agent's scope")
     d = metric_defs.get_definition(layer.graph, name, sem.source_of(oid))
     if d is None or d["status"] != "approved":
         raise KeyError(f"no certified metric {name!r}; call list_business_metrics")
@@ -791,18 +805,28 @@ _HANDLERS = {
 assert set(_HANDLERS) == _TOOL_NAMES, "every curated tool needs a handler"
 
 
+def _layer_on(tool: dict) -> bool:
+    from api import layers
+    return layers.is_on(layers.tool_layer(tool))
+
+
 def allowed_tools(scope: dict | None) -> list[dict]:
-    """The tools this caller may see: all of them locally, else its preset's."""
+    """The tools this caller may see: all of them locally, else its preset's,
+    and only for the layers this server has switched on."""
     if scope is None or scope.get("tools") is None:
-        return list(TOOLS)
+        return [t for t in TOOLS if _layer_on(t)]
     wanted = list(scope["tools"])
     by_name = {tool["name"]: tool for tool in TOOLS}
-    return [by_name[name] for name in wanted if name in by_name]
+    return [by_name[name] for name in wanted if name in by_name and _layer_on(by_name[name])]
 
 
 def call_tool(layer, name: str, arguments: dict, scope: dict | None = None):
     if name not in _TOOL_NAMES:
         raise KeyError(f"unknown tool {name!r}")
+    tool = next(t for t in TOOLS if t["name"] == name)
+    if not _layer_on(tool):
+        from api import layers
+        raise Forbidden(f"forbidden: the {layers.tool_layer(tool)} layer is switched off on this server")
     if scope is not None and scope.get("tools") is not None \
             and name not in scope["tools"]:
         raise Forbidden(f"forbidden: tool {name!r} is not available to this "

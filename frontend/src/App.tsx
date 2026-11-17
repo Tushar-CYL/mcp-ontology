@@ -4,6 +4,7 @@ import { SourceProvider } from './context/SourceProvider'
 import { ToastProvider } from './context/ToastProvider'
 import { AppShell } from './layout/AppShell'
 import { Agents } from './pages/Agents'
+import { AgentsHome } from './pages/agents/AgentsHome'
 import { Login } from './pages/Login'
 import { NotFound } from './pages/NotFound'
 import { Onboarding } from './pages/Onboarding'
@@ -12,6 +13,7 @@ import { SimpleOntology } from './pages/ontology/SimpleOntology'
 import { KnowledgeGraphTool } from './pages/graph/KnowledgeGraphTool'
 import { ContextTool } from './pages/context/ContextTool'
 import { SemanticTool } from './pages/semantic/SemanticTool'
+import { UseAnywhere } from './pages/UseAnywhere'
 
 export default function App() {
   return (
@@ -45,7 +47,10 @@ export default function App() {
                 <Route path="layers/graph" element={<Navigate to="/tools/graph" replace />} />
                 <Route path="layers/semantic" element={<Navigate to="/tools/semantic" replace />} />
                 <Route path="layers/context" element={<Navigate to="/tools/context" replace />} />
-                <Route path="agents" element={<Agents />} />
+                <Route path="agents" element={<AgentsHome />} />
+                <Route path="agents/older" element={<Agents />} />
+                <Route path="agents/:oid" element={<AgentsHome />} />
+                <Route path="use" element={<UseAnywhere />} />
                 <Route path="connections" element={<Navigate to="/agents" replace />} />
                 <Route path="factory" element={<Navigate to="/tools/context" replace />} />
                 <Route path="glossary" element={<Navigate to="/tools/semantic" replace />} />

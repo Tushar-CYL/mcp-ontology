@@ -8,12 +8,15 @@ Three screens, three groups of routes:
              PUT  /api/onto/{id}/fields   / things: direct corrections
 3. Use it    GET  /api/onto/{id}/nexus    flat tables for Nexus / Excel (JSON)
              GET  /api/onto/{id}/excel    the same as an .xlsx workbook
+             GET  /api/onto/{id}/contract the ontology as Strata Model v1 JSON (open format)
              GET  /api/onto/{id}/use      every way to consume it, with links
 
 Everything published is also served to agents over MCP (``get_ontology``).
 """
 
 from __future__ import annotations
+
+from typing import Literal
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
@@ -44,6 +47,9 @@ class BuildRequest(BaseModel):
     metadata: list[str] = Field(default_factory=list)
     domain: str = ""
     problem: str = ""
+    # data: build from the data (AI names, checked); model: use the metadata
+    # file exactly; keys: names from columns and declared keys, no AI.
+    mode: Literal["data", "model", "keys"] = "data"
 
 
 class ContextRequest(BaseModel):
@@ -124,6 +130,9 @@ def register(app, platform, error) -> None:
         if not body.sources and not body.paths and not body.metadata:
             raise error(400, "BadRequest", "connect at least one data source or give a "
                         "semantic model / data dictionary")
+        if body.mode == "model" and not body.metadata:
+            raise error(400, "BadRequest", "to use your ontology exactly, add its file "
+                        "(Strata Model JSON, Ossie YAML, dbt schema.yml or a data dictionary)")
         loaded = set(state.layer.graph.source_ids())
         missing = [x for x in body.sources if x not in loaded]
         if missing:
@@ -145,7 +154,7 @@ def register(app, platform, error) -> None:
             return simple.create_and_build(
                 state.layer, body.name, sources, metadata=body.metadata,
                 domain=body.domain, problem=body.problem, client=ai_client(),
-                progress=say)
+                progress=say, mode=body.mode)
 
         job_id = state.start_job(work, label="build ontology")
         return JSONResponse(status_code=202, content={"job_id": job_id,
@@ -232,6 +241,15 @@ def register(app, platform, error) -> None:
         return Response(text, media_type="application/yaml", headers={
             "Content-Disposition": f'attachment; filename="{oid}.ossie.yaml"'})
 
+    @app.get("/api/onto/{oid}/contract")
+    def onto_contract(oid: str, request: Request, version: int | None = None):
+        """The ontology as a Strata Model v1 document (docs/spec/strata-model.schema.json):
+        give it back as a metadata file to use it exactly, on any copy of the data."""
+        from ontology import contract
+        doc = guard(lambda: contract.to_contract(platform(request).layer.graph, oid, version))
+        return JSONResponse(doc, headers={
+            "Content-Disposition": f'attachment; filename="{oid}.strata-model.json"'})
+
     @app.get("/api/onto/{oid}/nexus")
     def onto_nexus(oid: str, request: Request, version: int | None = None):
         return guard(lambda: simple.for_excel(platform(request).layer.graph, oid, version))
@@ -278,6 +296,7 @@ def register(app, platform, error) -> None:
                        "keys": "Create a key on the Agents page; a key is scoped to "
                                "sources, so pick the sources of this ontology."},
             "files": {"json": f"{base}/api/onto/{oid}/nexus",
+                      "model": f"{base}/api/onto/{oid}/contract",
                       "ossie": f"{base}/api/onto/{oid}/ossie",
                       "owl": f"{base}/api/eo/{oid}/export/turtle",
                       "shacl": f"{base}/api/eo/{oid}/export/shacl",

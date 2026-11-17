@@ -60,9 +60,14 @@ def _now() -> str:
 
 
 def ensure(graph) -> None:
+    """Create the registry tables once per open database (every read used to
+    re-run the CREATE statements: 2.5 ms each, a dozen times per question)."""
+    if getattr(graph, "_registry_ready", False):
+        return
     with graph.lock:
         for statement in _SCHEMA:
             graph.con.execute(statement)
+    graph._registry_ready = True
 
 
 # -------------------------------------------------------------- ontologies

@@ -17,16 +17,17 @@
    7.  Layer 4 - Context
    8.  Agents (on top of the four layers)
    9.  How the layers work together (one question, end to end)
-  10.  Setup - install and run
-  11.  First use (5 minutes)
-  12.  Data you can connect
-  13.  Configuration (.env)
-  14.  Connect an AI agent over MCP
-  15.  Shared server
-  16.  Other commands and tests
-  17.  Troubleshooting
-  18.  Project layout
-  19.  Limits, stated plainly
+  10.  Use one layer, or your own ontology (open formats, CLI, bundle)
+  11.  Setup - install and run
+  12.  First use (5 minutes)
+  13.  Data you can connect
+  14.  Configuration (.env)
+  15.  Connect an AI agent over MCP
+  16.  Shared server
+  17.  Other commands and tests
+  18.  Troubleshooting
+  19.  Project layout
+  20.  Limits, stated plainly
 
 
 ===============================================================================
@@ -532,15 +533,45 @@
 
    Outside agents (Claude, Copilot-style, your code) use the SAME tools at /mcp.
 
- THE SIX AGENTS
-   Data Guide           Ontology          explains what data exists and means
-   Metric Analyst       Semantic          answers with certified metrics only
-   Entity Investigator  Knowledge graph   everything about one customer, order..
-   Insight Analyst      all four          the orchestrator across layers
-   Trust Checker        all, read-only    checks readiness; cannot compute new
-                                          numbers
-   Steward              Ontology          proposes changes for a person to
-                                          approve
+ BUILT-IN AGENTS, FROM YOUR DATA (6 TO 10, READY TO USE)
+   Strata works out the agents for each ontology from its data. Nothing to
+   set up: open Agents, pick one, ask. Their names and example questions come
+   from your data (real things, fields, values and record ids).
+
+   Always:
+   Data Guide            ontology          what the data is and how it links;
+                                           never gives numbers
+   <Thing> Investigator  knowledge graph   one record by id or name and what it
+                                           is linked to (e.g. Order Investigator)
+   Metric Analyst        semantic          certified metrics only, with formula
+                                           and owner; refuses anything else
+   Insight Analyst       all four          any question, from checked facts
+   Trust Checker         read-only         certification, drift, data checks,
+                                           empty fields, broken links
+   Data Steward          ontology          proposes notes; a person applies them
+   When the data supports them (up to 10 in all):
+   Revenue / money analyst, <Status> Watcher (e.g. Order Status Watcher),
+   Regional Analyst (a place field), Trend Analyst (per month), Privacy
+   Checker (where personal data is; never shows a value).
+
+   Built-ins are read-only and refresh when the data changes. To change one,
+   click COPY: the copy is yours to rename, narrow (which things and metrics
+   it may use), give instructions and example questions. Or CREATE AGENT from
+   scratch. Every change bumps the agent's version; "Try it" asks the agent
+   before you save it.
+
+   Numbers come only from the data: a certified metric first; then, for
+   counting questions (how many / total / by / per month / which has the
+   most), Strata's own query over proven links (no AI-written SQL); only then
+   a checked AI query, labelled as such.
+   On Olist: canceled orders 625; customers in SP 41,746 (42 %); total price
+   of delivered orders 13,221,498.11 - each equal to plain SQL.
+
+   CONNECT ANY AGENT: open it -> Create a key -> paste the Claude / Cursor
+   line. The key reaches only that agent's tools, ontology and metrics
+   (anything else is refused and logged under "What outside AIs asked it").
+   Agents made per data source before this version are under Agents ->
+   "older agents".
 
  Key MCP tools: get_ontology, ask_question, find_entity, get_entity,
  how_connected, list_business_metrics, get_business_metric,
@@ -570,7 +601,105 @@
 
 
 ===============================================================================
- 10. SETUP - INSTALL AND RUN
+ 10. USE ONE LAYER, OR YOUR OWN ONTOLOGY
+===============================================================================
+
+ Every layer works on its own, in three ways. Pick what fits the team.
+
+ IN THE WEB APP: sidebar -> Use them -> USE ANYWHERE shows all three ways, and
+ every layer page (Ontology "Use it" tab, Knowledge graph, Semantic, Context)
+ ends with a panel "Use the <layer> layer in your own system": download it in
+ an open format, download a ready-to-run zip with only that layer, or copy the
+ API / MCP / command-line call.
+
+   A. ALL FOUR LAYERS HERE   the web app, as described above.
+   B. YOUR ONTOLOGY, OUR LAYERS
+                             bring your own ontology; the Knowledge graph,
+                             Semantic and Context layers run on top of it.
+   C. OUR LAYER, YOUR SYSTEM take one layer out, in an open format or as a
+                             ready-to-run copy, and use it where you work.
+
+   YOUR DATA ---> ONTOLOGY (ours, or yours as a Strata Model file)
+                     |                |                 |
+                     v                v                 v
+              KNOWLEDGE GRAPH      SEMANTIC          CONTEXT
+              RDF, JSON, Neo4j     SQL views,        Context Pack
+                                   dbt MetricFlow    (JSON)
+
+ THE OPEN FORMAT BETWEEN LAYERS: STRATA MODEL v1
+   One JSON file: things, fields (role, meaning, unit), the table and column
+   behind each, and the links. Schema: docs/spec/strata-model.schema.json.
+     Download:  Ontology -> Use it -> Strata Model, or GET /api/onto/<id>/contract
+     Agents:    MCP get_ontology with format "contract"
+
+ B. USE YOUR OWN ONTOLOGY
+   Ontology -> New ontology -> "Use my ontology exactly", then add the data and
+   your file: a Strata Model (.json), an Ossie model (.yaml), a dbt schema.yml
+   or a data dictionary (.csv / .xlsx).
+     - Your names, fields and links are used as written. The AI is not asked.
+     - Tables your file does not name are left out (the build says which).
+     - Everything is still checked against the data. If your file says a text
+       column is money, it stays money and the screen says "Data disagrees"
+       and why. A declared link the data does not support is marked the same.
+     - Your edits and notes survive rebuilds, as always.
+   Other choice: "Keys only": names from the columns and the keys the database
+   declares, never any AI (also on rebuild).
+   Live on Olist: our ontology exported, then imported exactly, gave the same
+   9 things, 52 fields and 7 links, 100 % confirmed, and all 24 metric values
+   identical. The import took 5.7 s.
+
+ C. EACH LAYER IN ANOTHER SYSTEM'S FORMAT
+   Ontology         Strata Model JSON, Apache Ossie, OWL / SHACL, Excel, Nexus
+   Knowledge graph  RDF N-Triples (any triple store), JSON nodes and edges,
+                    Neo4j import files.   GET /api/kg/<id>/rdf, /graph.json, /neo4j
+                    Olist: 10.4 million triples written in 15 s.
+   Semantic         SQL views (one CREATE VIEW per certified metric, over the
+                    source tables by their own names) and dbt MetricFlow YAML.
+                    GET /api/sem/<id>/export?format=sql   (or metricflow)
+                    Olist: the SQL view gave 16,008,872.12, the same as
+                    Strata and as plain SQL on the CSV files.
+   Context          Context Pack v1: the checked facts for one question, each
+                    with its citation; any AI can answer from it.
+                    POST /api/ctx/<id>/pack
+                    Schema: docs/spec/context-pack.schema.json
+   Personal-data columns (emails, phones, ids...) never leave in an export.
+
+ ONLY SOME LAYERS ON A SERVER
+       python run_server.py --layers semantic,context
+       (or STRATA_LAYERS=semantic,context in .env)
+   The web app shows only those pages, the other layers' API answers "switched
+   off", and agents over MCP see only those tools. The ontology is always on.
+   GET /api/health/layers says, per layer, whether it is ready and why not.
+
+ COMMAND LINE AND PYTHON (no web app needed)
+       pip install .                  (then the  strata  command exists;
+                                       or: python -m strata ...)
+       strata connect D:/data/shop --name shop
+       strata build "Shop" --source shop        (or --model my.json, --keys-only)
+       strata export ontology shop -o shop.strata-model.json
+       strata export graph shop --format rdf -o shop.nt
+       strata export semantic shop --format metricflow -o metrics.yml
+       strata metrics shop
+       strata certify shop total_payment_value --owner Finance
+       strata context shop "revenue by payment type"
+       strata health shop
+       strata serve --layers semantic
+   In Python:
+       import strata
+       s = strata.open("work.duckdb")
+       s.metrics("shop")
+
+ A READY-TO-RUN COPY FOR ANOTHER TEAM (Python only, no Docker)
+       strata bundle -o strata-semantic.zip --layers semantic --ontology shop
+   One zip (about 1 MB): the code, the built web app, the open specs, your
+   ontology as a Strata Model to start from, and start.bat / start.sh. They
+   unzip it and double-click start.bat (or run ./start.sh). The first start
+   makes a private .venv and installs the requirements; then Strata opens with
+   only those layers. Their data never moves: they connect it from the app.
+
+
+===============================================================================
+ 11. SETUP - INSTALL AND RUN
 ===============================================================================
 
  WHAT YOU NEED
@@ -618,7 +747,7 @@
 
 
 ===============================================================================
- 11. FIRST USE (5 MINUTES)
+ 12. FIRST USE (5 MINUTES)
 ===============================================================================
 
    1. Data sources -> Connect: a folder of CSV files, a .db file, or a URL
@@ -627,11 +756,11 @@
    3. Knowledge graph -> Build: search a value; click a record.
    4. Semantic: answer "which one is revenue?"; certify the metrics you trust.
    5. Context: click a suggested question or type your own.
-   6. Agents: pick an agent, or connect Claude (section 14).
+   6. Agents: pick an agent, or connect Claude (section 15).
 
 
 ===============================================================================
- 12. DATA YOU CAN CONNECT
+ 13. DATA YOU CAN CONNECT
 ===============================================================================
 
    Files           CSV, TSV, Excel, JSON, NDJSON, Parquet, Delta Lake folder
@@ -649,7 +778,7 @@
 
 
 ===============================================================================
- 13. CONFIGURATION (.env)
+ 14. CONFIGURATION (.env)
 ===============================================================================
 
    EYQ_INCUBATOR_ENDPOINT,     the AI model; leave empty to run without AI
@@ -668,7 +797,7 @@
 
 
 ===============================================================================
- 14. CONNECT AN AI AGENT OVER MCP
+ 15. CONNECT AN AI AGENT OVER MCP
 ===============================================================================
 
    With the server running:
@@ -680,7 +809,7 @@
 
 
 ===============================================================================
- 15. SHARED SERVER
+ 16. SHARED SERVER
 ===============================================================================
 
    For a server other people use, set in .env:
@@ -692,22 +821,22 @@
 
 
 ===============================================================================
- 16. OTHER COMMANDS AND TESTS
+ 17. OTHER COMMANDS AND TESTS
 ===============================================================================
 
        python run_server.py --port 8010       another port
        python run_server.py --rebuild-ui      force a fresh web-app build
        python run_server.py --no-ui           API only
-       python -m pytest -q                    Python tests (about 1,160)
+       python -m pytest -q                    Python tests (about 1,230)
        cd frontend
-       npm test                               web-app tests (104)
+       npm test                               web-app tests (111)
        npm run dev                            web app with hot reload at
                                               http://localhost:5173 (server
                                               started with --no-ui)
 
 
 ===============================================================================
- 17. TROUBLESHOOTING
+ 18. TROUBLESHOOTING
 ===============================================================================
 
    "Restart the server" on a page
@@ -729,13 +858,14 @@
 
 
 ===============================================================================
- 18. PROJECT LAYOUT
+ 19. PROJECT LAYOUT
 ===============================================================================
 
    ontology/          connect, profile, meanings, links, versions, Ask,
                       exports (Excel, Ossie, OWL)
    knowledge_graph/   the virtual graph: model, search, records, paths, Neo4j
-   semantic/          metric store and engine; model.py is the Semantic tool
+   semantic/          metric store and engine; model.py is the Semantic tool,
+                      export.py writes SQL views and dbt MetricFlow
    context/           the context engine (engine.py) and pictures-first insights
    agent/             agent presets, LLM client, guardrails, receipts
    api/               FastAPI server, REST routes per layer, MCP server
@@ -747,12 +877,14 @@
    docs/research/     the research behind each layer, with sources
                       (REPORT.md first)
    data/              your local data and registry (not in git)
-   run_server.py      starts everything
+   strata/            the strata command, the Python library, bundles
+   docs/spec/         open formats: Strata Model, Context Pack (JSON Schema)
+   run_server.py      starts everything (--layers to choose layers)
    requirements.txt   Python packages
 
 
 ===============================================================================
- 19. LIMITS, STATED PLAINLY
+ 20. LIMITS, STATED PLAINLY
 ===============================================================================
 
    - Running totals, month-to-date and year-to-date metrics, and per-user row

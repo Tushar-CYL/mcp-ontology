@@ -1,4 +1,9 @@
 import type {
+  OntoAgent,
+  OntoAgentAnswer,
+  OntoAgentBody,
+  OntoAgentConnection,
+  OntoAgentsList,
   OntoAsk,
   OntoBuildRequest,
   OntoContextResult,
@@ -446,6 +451,31 @@ export const api = {
       signal, timeoutMs: 15_000,
     }),
 
+  // ------------------------------------------------ ontology agents
+  ontoAgents: (oid: string, signal?: AbortSignal) =>
+    request<OntoAgentsList>(`/onto-agents/${encodeURIComponent(oid)}`, { signal, timeoutMs: 120_000 }),
+
+  createOntoAgent: (oid: string, body: OntoAgentBody, signal?: AbortSignal) =>
+    request<OntoAgent>(`/onto-agents/${encodeURIComponent(oid)}`, { method: 'POST', body, signal, timeoutMs: 30_000 }),
+
+  tryOntoAgent: (oid: string, body: OntoAgentBody & { question: string }, signal?: AbortSignal) =>
+    request<OntoAgentAnswer>(`/onto-agents/${encodeURIComponent(oid)}/try`, { method: 'POST', body, signal, timeoutMs: 180_000 }),
+
+  updateOntoAgent: (id: string, body: OntoAgentBody, signal?: AbortSignal) =>
+    request<OntoAgent>(`/oagents/${encodeURIComponent(id)}`, { method: 'PUT', body, signal, timeoutMs: 30_000 }),
+
+  deleteOntoAgent: (id: string, signal?: AbortSignal) =>
+    request<{ deleted: string }>(`/oagents/${encodeURIComponent(id)}`, { method: 'DELETE', signal, timeoutMs: 15_000 }),
+
+  copyOntoAgent: (id: string, name?: string, signal?: AbortSignal) =>
+    request<OntoAgent>(`/oagents/${encodeURIComponent(id)}/copy`, { method: 'POST', body: name ? { name } : {}, signal, timeoutMs: 30_000 }),
+
+  askOntoAgent: (id: string, question: string, signal?: AbortSignal) =>
+    request<OntoAgentAnswer>(`/oagents/${encodeURIComponent(id)}/ask`, { method: 'POST', body: { question }, signal, timeoutMs: 180_000 }),
+
+  ontoAgentConnection: (id: string, signal?: AbortSignal) =>
+    request<OntoAgentConnection>(`/oagents/${encodeURIComponent(id)}/connection`, { signal, timeoutMs: 15_000 }),
+
   // ------------------------------------------------ phase 5: validate
   validateSql: (payload: { source: string; sql: string; metric?: string }, signal?: AbortSignal) =>
     request<ValidationResult>('/validate/sql', {
@@ -654,6 +684,12 @@ export const api = {
   ctxBuild: (oid: string, question: string, budgetChars = 2000, signal?: AbortSignal) =>
     request<CtxBuild>(`/ctx/${encodeURIComponent(oid)}/build`, {
       method: 'POST', body: { question, budget_chars: budgetChars }, signal, timeoutMs: 180_000,
+    }),
+
+  /** The open Context Pack for one question (no AI answer). */
+  ctxPack: (oid: string, question: string, signal?: AbortSignal) =>
+    request<Record<string, unknown>>(`/ctx/${encodeURIComponent(oid)}/pack`, {
+      method: 'POST', body: { question }, signal, timeoutMs: 120_000,
     }),
 
   ctxFeedback: (oid: string, question: string, text: string, signal?: AbortSignal) =>

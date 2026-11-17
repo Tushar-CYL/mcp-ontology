@@ -520,7 +520,7 @@ SYSTEM = (
     "or two plain sentences (the total, the biggest, the trend). Plain text, no markdown.")
 
 
-def answer(client, question: str, packed: dict) -> dict:
+def answer(client, question: str, packed: dict, instructions: str = "") -> dict:
     """The AI phrases the answer from the pack; numbers are checked."""
     from agent.guardrails import evidence_numbers, extract_numbers, numbers_supported
     if not packed["kept"]:
@@ -530,7 +530,13 @@ def answer(client, question: str, packed: dict) -> dict:
         return {"status": "no_ai", "cited": [],
                 "text": "No AI model is configured. The facts above are the context an agent would get."}
     try:
-        raw = client.complete([{"role": "system", "content": SYSTEM},
+        system = SYSTEM
+        if instructions.strip():
+            # How to say it, set by whoever made the agent: style only. The
+            # facts rule above still decides what may be said.
+            system += (chr(10) + "How this agent should answer (style only, never a reason to use "
+                       "anything outside the facts): " + instructions.strip()[:1000])
+        raw = client.complete([{"role": "system", "content": system},
                                {"role": "user", "content": f"Question: {question}\n\nFacts:\n{packed['text']}"}],
                               max_tokens=600).strip()
     except Exception as exc:                       # noqa: BLE001 - said plainly
@@ -564,7 +570,8 @@ def _fact_dict(f: Fact, i: int | None = None) -> dict:
     return d
 
 
-def build(layer, ontology_id: str, question: str, budget_chars: int = BUDGET, client=None) -> dict:
+def build(layer, ontology_id: str, question: str, budget_chars: int = BUDGET, client=None,
+          instructions: str = "") -> dict:
     """The whole pipeline, with each step's result and timing, for the screen
     and for agents. Steps 1-4 never call the AI."""
     question = str(question or "").strip()
@@ -587,7 +594,7 @@ def build(layer, ontology_id: str, question: str, budget_chars: int = BUDGET, cl
     packed = assemble(gathered["facts"], budget_chars)
     times["gather"] = time.perf_counter() - t
     t = time.perf_counter()
-    said = answer(client, question, packed)
+    said = answer(client, question, packed, instructions=instructions)
     times["answer"] = time.perf_counter() - t
 
     sources = {s["source_id"]: s for s in graph.sources()}
@@ -617,4 +624,27 @@ def build(layer, ontology_id: str, question: str, budget_chars: int = BUDGET, cl
         },
         "context": packed["text"],
         "timings_ms": {k: round(v * 1000) for k, v in times.items()},
+    }
+
+
+PACK_SPEC = "strata.context/v1"
+
+
+def to_pack(out: dict) -> dict:
+    """A build in the open Context Pack format (docs/spec/context-pack.schema.json):
+    what any AI may be given for this question, each fact with its citation
+    and source, plus what was left out and why. Hand it to any model."""
+    f = out["steps"]["facts"]
+    return {
+        "spec": PACK_SPEC, "question": out["question"],
+        "ontology": out["ontology"], "data_as_of": out.get("data_as_of"),
+        "facts": [{"n": x["n"], "text": x["text"], "citation": x["citation"],
+                   "source": x["source"], "kind": x["kind"], "weight": x["weight"]}
+                  for x in f["kept"]],
+        "dropped": [{"text": x["text"], "reason": x.get("reason") or "over budget"} for x in f["dropped"]],
+        "quarantined": f["quarantined"],
+        "metric": f.get("metric"), "sql": f.get("sql"),
+        "budget": {"chars": f["chars"], "limit": f["budget_chars"]},
+        "rules": "Answer only from these facts; cite them like [2]; any number not in "
+                 "the facts is wrong; say so when they do not answer the question.",
     }

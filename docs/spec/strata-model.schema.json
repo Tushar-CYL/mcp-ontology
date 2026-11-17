@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://strata.local/spec/strata-model.schema.json",
+  "title": "Strata Model v1",
+  "description": "An ontology as one open JSON document: the business things, their fields (with role, meaning and unit) bound to tables and columns, and the links between them. Strata writes it (GET /api/onto/{id}/contract) and reads it (give it as the metadata file of a new ontology to use it exactly). Only spec, name and things (each with name and tables) are required.",
+  "type": "object",
+  "required": ["spec", "name", "things"],
+  "properties": {
+    "spec": {"const": "strata.model/v1"},
+    "id": {"type": "string"},
+    "name": {"type": "string", "minLength": 1},
+    "domain": {"type": "string"},
+    "version": {"type": ["integer", "null"]},
+    "published_at": {"type": ["string", "null"]},
+    "generated_by": {"type": "string"},
+    "generated_at": {"type": "string"},
+    "sources": {"type": "array", "items": {"type": "string"}},
+    "confirmed_pct": {"type": ["number", "null"], "description": "Share of fields the data confirmed (written by Strata)."},
+    "things": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/thing"}},
+    "links": {"type": "array", "items": {"$ref": "#/$defs/link"}},
+    "notes": {"type": "array", "items": {"type": "object", "required": ["text"],
+      "properties": {"text": {"type": "string", "minLength": 1}, "at": {"type": ["string", "null"]}}}}
+  },
+  "$defs": {
+    "thing": {
+      "type": "object",
+      "required": ["name", "tables"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "description": "Business name: Customer, Order."},
+        "description": {"type": "string"},
+        "tables": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1},
+          "description": "Tables holding this thing, written source.table. On import only the table part is matched."},
+        "records": {"type": ["integer", "null"]},
+        "key": {"type": "array", "items": {"type": "string"}},
+        "by": {"type": "string"},
+        "fields": {"type": "array", "items": {"$ref": "#/$defs/field"},
+          "description": "When given, only these fields (plus keys and link columns) are used."}
+      }
+    },
+    "field": {
+      "type": "object",
+      "required": ["column"],
+      "properties": {
+        "column": {"type": "string", "minLength": 1},
+        "table": {"type": ["string", "null"]},
+        "name": {"type": ["string", "null"], "description": "Business label: Invoice Total."},
+        "role": {"enum": ["identifier", "reference", "name", "category", "flag", "date", "amount",
+                          "measure", "quantity", "location", "text", null, ""]},
+        "type": {"type": ["string", "null"]},
+        "unit": {"type": ["string", "null"]},
+        "meaning": {"type": ["string", "null"]},
+        "personal": {"type": ["string", "null"]},
+        "links_to": {"type": ["string", "null"]},
+        "check": {"enum": ["verified", "conflict", "unchecked", null, ""],
+          "description": "Written by Strata: did the data confirm the role? Ignored on import (it is measured again)."},
+        "proof": {"type": ["string", "null"]},
+        "by": {"type": ["string", "null"]}
+      }
+    },
+    "end": {
+      "type": "object",
+      "required": ["table", "column"],
+      "properties": {"table": {"type": "string", "minLength": 1}, "column": {"type": "string", "minLength": 1}}
+    },
+    "link": {
+      "type": "object",
+      "required": ["from", "to"],
+      "properties": {
+        "from": {"$ref": "#/$defs/end"},
+        "to": {"$ref": "#/$defs/end"},
+        "from_thing": {"type": ["string", "null"]},
+        "to_thing": {"type": ["string", "null"]},
+        "cardinality": {"enum": ["many-to-one", "one-to-one", "one-to-many", "many-to-many", null, ""]},
+        "label": {"type": ["string", "null"]},
+        "match": {"type": ["number", "null"], "description": "Share of rows that find their target (written by Strata)."},
+        "declared": {"type": ["boolean", "null"]}
+      }
+    }
+  }
+}

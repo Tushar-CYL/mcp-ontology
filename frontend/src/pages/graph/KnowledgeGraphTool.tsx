@@ -8,6 +8,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { ErrorState } from '../../components/ErrorState'
 import { LoadingState } from '../../components/LoadingState'
 import { PageHeader } from '../../components/PageHeader'
+import { UseElsewhere } from '../../components/UseElsewhere'
 import { useAsync } from '../../hooks/useAsync'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { cx } from '../../utils/cx'
@@ -188,6 +189,8 @@ function Builder({ oid, name, choices, onSwitch }: {
       </section>
 
       {phase === 'done' ? <GraphPicture oid={oid} /> : null}
+
+      <UseElsewhere layer="graph" oid={oid} />
     </div>
   )
 }

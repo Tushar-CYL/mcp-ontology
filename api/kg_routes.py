@@ -8,6 +8,8 @@ a connection, read live (see knowledge_graph/explore.py).
   GET  /api/kg/{id}/entity     one entity's 360                (?set=&key=)
   GET  /api/kg/{id}/path       how two entities are connected  (?from_set=&from_key=&to_set=&to_key=)
   GET  /api/kg/{id}/neo4j      Neo4j import files (zip)
+  GET  /api/kg/{id}/rdf        RDF N-Triples, for any triple store
+  GET  /api/kg/{id}/graph.json plain JSON nodes and edges
 """
 
 from __future__ import annotations
@@ -65,6 +67,23 @@ def register(app, platform, error) -> None:
                   key: str = Query(..., max_length=500),
                   limit: int = Query(kg.EXPAND_LIMIT, ge=1, le=50)):
         return guard(lambda: kg.expand(platform(request).layer, oid, set, key, limit=limit))
+
+    @app.get("/api/kg/{oid}/rdf")
+    def kg_rdf(oid: str, request: Request):
+        """The graph as RDF N-Triples, for any triple store."""
+        work = Path(tempfile.mkdtemp(prefix="strata_rdf_"))
+        try:
+            out = guard(lambda: kg.export_rdf(platform(request).layer, oid, work / f"{oid}.nt"))
+        except Exception:
+            shutil.rmtree(work, ignore_errors=True)
+            raise
+        return FileResponse(out, media_type="application/n-triples", filename=f"{oid}-knowledge-graph.nt",
+                            background=BackgroundTask(shutil.rmtree, work, ignore_errors=True))
+
+    @app.get("/api/kg/{oid}/graph.json")
+    def kg_json(oid: str, request: Request, limit: int = Query(100_000, ge=1, le=1_000_000)):
+        """The graph as plain JSON {nodes, edges} (Cytoscape, D3, NetworkX)."""
+        return guard(lambda: kg.export_json_graph(platform(request).layer, oid, limit=limit))
 
     @app.get("/api/kg/{oid}/neo4j")
     def kg_neo4j(oid: str, request: Request):

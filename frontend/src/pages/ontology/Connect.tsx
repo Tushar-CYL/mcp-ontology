@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import { Database, FileText, Plus, Sparkles, X } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Database, FileText, KeyRound, Plus, Sparkles, Waypoints, X } from 'lucide-react'
 import { api, describeError } from '../../api/client'
-import type { EoJob, OntoAi } from '../../api/types'
+import type { EoJob, OntoAi, OntoBuildMode } from '../../api/types'
 import { Badge } from '../../components/Badge'
 import { Button } from '../../components/Button'
 import { Callout } from '../../components/Callout'
@@ -9,6 +10,15 @@ import { Card } from '../../components/Card'
 import { TextInput } from '../../components/Field'
 import { useSource } from '../../context/SourceContext'
 import { JobLog } from './shared'
+
+const MODES: Array<{ id: OntoBuildMode; title: string; text: string; icon: ReactNode }> = [
+  { id: 'data', title: 'Build from my data', icon: <Sparkles size={18} />,
+    text: 'The AI names the things and fields; the data checks every name. Your metadata helps.' },
+  { id: 'model', title: 'Use my ontology exactly', icon: <Waypoints size={18} />,
+    text: 'Your names, fields and links from your file, bound to this data and checked. No AI.' },
+  { id: 'keys', title: 'Keys only', icon: <KeyRound size={18} />,
+    text: 'Names from the columns and the keys the database declares. No AI, fastest.' },
+]
 
 /**
  * Screen 1: connect. Pick data that is already connected or point at a new
@@ -27,6 +37,9 @@ export function Connect({ ai, onBuilt }: { ai: OntoAi | undefined; onBuilt: (oid
   const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
+  const [params] = useSearchParams()
+  const asked = params.get('mode')
+  const [mode, setMode] = useState<OntoBuildMode>(asked === 'model' || asked === 'keys' ? asked : 'data')
 
   const toggle = (id: string) =>
     setPicked((now) => (now.includes(id) ? now.filter((x) => x !== id) : [...now, id]))
@@ -41,13 +54,14 @@ export function Connect({ ai, onBuilt }: { ai: OntoAi | undefined; onBuilt: (oid
     setMetaDraft('')
   }
   const nothing = !picked.length && !paths.length && !metadata.length
+  const needsFile = mode === 'model' && !metadata.length
   const build = async () => {
     setError(null)
     setStarting(true)
     try {
       const out = await api.ontoBuild({
         name: name.trim() || 'My ontology', sources: picked,
-        paths: paths.map((path) => ({ path })), metadata, domain: domain.trim(),
+        paths: paths.map((path) => ({ path })), metadata, domain: domain.trim(), mode,
       })
       setJobId(out.job_id)
     } catch (e) {
@@ -100,8 +114,23 @@ export function Connect({ ai, onBuilt }: { ai: OntoAi | undefined; onBuilt: (oid
         <Chips items={paths} onRemove={(p) => setPaths(paths.filter((x) => x !== p))} />
       </Card>
 
-      <Card title="Metadata you already have (optional)"
-        subtitle="A Power BI / Fabric semantic model (.bim), a dbt file (schema.yml) or a data dictionary (.csv / .xlsx with table, column, description). Its descriptions win over the AI. A semantic model alone is enough to start.">
+      <Card title="How to build it">
+        <div className="onto-modes" role="radiogroup" aria-label="How to build it">
+          {MODES.map((m) => (
+            <label key={m.id} className={`onto-mode${mode === m.id ? ' is-picked' : ''}`}>
+              <input type="radio" name="mode" value={m.id} checked={mode === m.id} onChange={() => setMode(m.id)} />
+              <span className="onto-mode__icon" aria-hidden="true">{m.icon}</span>
+              <span className="onto-mode__title">{m.title}</span>
+              <span className="onto-mode__text">{m.text}</span>
+            </label>
+          ))}
+        </div>
+      </Card>
+
+      <Card title={mode === 'model' ? 'Your ontology file' : 'Metadata you already have (optional)'}
+        subtitle={mode === 'model'
+          ? 'A Strata Model (.json, downloaded from any Strata ontology or written by hand), an Apache Ossie model (.yaml), a dbt schema.yml or a data dictionary (.csv / .xlsx). Its things, fields and links are used exactly, then checked against the data.'
+          : 'A Power BI / Fabric semantic model (.bim), a dbt file (schema.yml), an Ossie model, a Strata Model (.json) or a data dictionary (.csv / .xlsx with table, column, description). Its descriptions win over the AI. A semantic model alone is enough to start.'}>
         <div className="onto-add">
           <TextInput label="Metadata file" value={metaDraft}
             placeholder="D:\models\model.bim   or   D:\dbt\models\schema.yml   or   D:\dictionary.csv"
@@ -121,12 +150,13 @@ export function Connect({ ai, onBuilt }: { ai: OntoAi | undefined; onBuilt: (oid
             hint="A few words help the AI choose the right business names."
             onChange={(e) => setDomain(e.target.value)} />
         </div>
-        <AiLine ai={ai} />
+        {mode === 'data' ? <AiLine ai={ai} /> : null}
         {error ? <Callout tone="danger" title="Could not build">{error}</Callout> : null}
         <div className="onto-actions">
           <Button variant="primary" icon={<Sparkles size={16} />} onClick={build}
-            loading={starting} disabled={nothing}>Build ontology</Button>
-          {nothing ? <span className="muted">Pick or add data, or add a semantic model.</span> : null}
+            loading={starting} disabled={nothing || needsFile}>Build ontology</Button>
+          {nothing ? <span className="muted">Pick or add data, or add a semantic model.</span>
+            : needsFile ? <span className="muted">Add your ontology file above.</span> : null}
         </div>
       </Card>
     </div>

@@ -7,11 +7,15 @@
  */
 
 // ------------------------------------------------------------------ health
+export type StrataLayer = 'ontology' | 'graph' | 'semantic' | 'context' | 'agents'
+
 export interface HealthResponse {
   /** Whether this server requires an access token (STRATA_API_TOKENS). */
   auth?: { required: boolean }
   /** True while saved sources are re-opening in the background. */
   warming?: boolean
+  /** Layers this server offers (the ontology is always on). Missing: all. */
+  layers?: StrataLayer[]
   status: string
   sources: string[]
 }
@@ -1061,6 +1065,8 @@ export interface OntoView {
   version: number | null
   published_at: string | null
   built: OntoBuilt | null
+  /** How it was built: from the data, from your ontology exactly, or keys only. */
+  mode?: OntoBuildMode
   summary: OntoSummary
   things: OntoThing[]
   links: OntoLink[]
@@ -1081,6 +1087,8 @@ export interface OntoListResponse {
   roles: Record<string, string>
 }
 
+export type OntoBuildMode = 'data' | 'model' | 'keys'
+
 export interface OntoBuildRequest {
   name: string
   sources: string[]
@@ -1088,6 +1096,7 @@ export interface OntoBuildRequest {
   metadata: string[]
   domain?: string
   problem?: string
+  mode?: OntoBuildMode
 }
 
 export interface OntoContextResult {
@@ -1129,7 +1138,7 @@ export interface OntoUse {
     contract: Record<string, string[]> }
   agents: { mcp_url: string; tool: string; arguments: Record<string, string>;
     claude_code: string; keys: string }
-  files: { json: string; ossie: string; owl: string; shacl: string; git_zip: string }
+  files: { json: string; model: string; ossie: string; owl: string; shacl: string; git_zip: string }
 }
 
 /** ask_question: rows + the SQL that produced them + the fields it used. */
@@ -1397,3 +1406,82 @@ export interface SemDetail extends SemCard {
   verified: Array<{ key: string; question: string; metric: string; passed: boolean; why: string | null }>
 }
 
+
+// ------------------------------------------------------- ontology agents
+/** How an agent answers (agent/catalog.py KINDS). */
+export type OntoAgentKind = 'guide' | 'investigator' | 'metric' | 'insight' | 'trust' | 'steward' | 'privacy'
+
+export interface OntoAgent {
+  id: string
+  ontology: string
+  name: string
+  kind: OntoAgentKind
+  kind_title: string
+  builtin: boolean
+  /** The built-in this one was copied from. */
+  base: string | null
+  status: 'active' | 'retired'
+  version: number
+  job: string
+  /** Why the data has this agent (built-ins). */
+  why: string
+  layers: string[]
+  tools: string[]
+  guardrails: string[]
+  scope: { things: string[]; metrics: string[] }
+  examples: Array<{ text: string; why: string }>
+  instructions: string
+  updated_at: string
+}
+
+export interface OntoAgentKindInfo {
+  kind: OntoAgentKind
+  title: string
+  layers: string[]
+  guardrails: string[]
+}
+
+export interface OntoAgentsList {
+  ontology: string
+  builtin: OntoAgent[]
+  mine: OntoAgent[]
+  kinds: OntoAgentKindInfo[]
+  /** What an agent may be scoped to. */
+  things: string[]
+  metrics: Array<{ name: string; title: string; certified: boolean }>
+}
+
+export interface OntoAgentBody {
+  name?: string
+  kind?: OntoAgentKind
+  job?: string
+  instructions?: string
+  scope?: { things: string[]; metrics: string[] }
+  examples?: string[]
+}
+
+export interface OntoAgentAnswer {
+  agent_id: string
+  agent: string
+  kind: OntoAgentKind
+  question: string
+  answer: { headline: string; text: string; confidence: 'high' | 'medium' | 'low' }
+  answerable: { verdict: 'yes' | 'partial' | 'no'; reason: string; nearest: string | null }
+  used: Array<{ layer: string; what: string }>
+  facts: Array<{ text: string; source: string; citation: string }>
+  table: { columns: string[]; rows: Array<Array<string | number | null>> } | null
+  records: Array<{ set: string; key: string; thing: string; label: string }>
+  proposal: { text: string; changes: Array<{ what: string; change: string }>; apply: string } | null
+  metric: { name: string; title: string; owner: string | null } | null
+  sql: string | null
+  latency_ms: number
+}
+
+export interface OntoAgentConnection {
+  mcp_url: string
+  tools: string[]
+  claude_code: string
+  claude_desktop: unknown
+  cursor: unknown
+  curl: string
+}

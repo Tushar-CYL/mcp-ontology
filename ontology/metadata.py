@@ -242,6 +242,12 @@ def parse(path: str | Path) -> dict:
             data = json.loads(p.read_text(encoding="utf-8-sig"))
         except ValueError as exc:
             raise MetadataError(f"{p.name} is not valid JSON: {exc}") from exc
+        from ontology import contract
+        if contract.is_contract(data):
+            try:
+                return contract.to_metadata(data, p)
+            except contract.ContractError as exc:
+                raise MetadataError(str(exc)) from exc
         return parse_tabular(data, p)
     if suffix in DBT_FILES:
         import yaml
@@ -264,9 +270,17 @@ def merge(a: dict, b: dict) -> dict:
            "file": f"{a['file']}, {b['file']}", "tables": json.loads(json.dumps(a["tables"])),
            "relationships": a["relationships"] + b["relationships"],
            "measures": a["measures"] + b["measures"]}
+    # A Strata Model ("build exactly this") stays exact when merged.
+    if a.get("exact") or b.get("exact"):
+        out["exact"] = True
+    if a.get("notes") or b.get("notes"):
+        out["notes"] = list(a.get("notes") or []) + list(b.get("notes") or [])
     for name, t in b["tables"].items():
         mine = out["tables"].setdefault(name, {"description": "", "columns": {}})
         mine["description"] = mine["description"] or t["description"]
+        for extra in ("thing", "key", "listed"):
+            if t.get(extra) and not mine.get(extra):
+                mine[extra] = t[extra]
         for col, info in t["columns"].items():
             mine["columns"].setdefault(col, info)
     return out

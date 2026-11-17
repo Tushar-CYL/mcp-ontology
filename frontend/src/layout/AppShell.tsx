@@ -8,16 +8,18 @@ import {
   Brain,
   Scale,
   Menu,
+  PackageOpen,
   Plug,
   X,
 } from 'lucide-react'
 import { api } from '../api/client'
+import type { StrataLayer } from '../api/types'
 import { useSource } from '../context/SourceContext'
 import { cx } from '../utils/cx'
 
 /* Grouped by who uses it: data teams govern, BI teams define metrics,
    agents consume the packed context. */
-type NavItem = { to: string; label: string; icon: typeof Plug }
+type NavItem = { to: string; label: string; icon: typeof Plug; layer?: StrataLayer }
 
 const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   { label: 'Connect', items: [{ to: '/onboarding', label: 'Data sources', icon: Plug }] },
@@ -25,12 +27,18 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: 'Accelerators',
     items: [
       { to: '/tools/ontology', label: 'Ontology', icon: Sparkles },
-      { to: '/tools/graph', label: 'Knowledge graph', icon: Waypoints },
-      { to: '/tools/semantic', label: 'Semantic', icon: Scale },
-      { to: '/tools/context', label: 'Context', icon: Brain },
+      { to: '/tools/graph', label: 'Knowledge graph', icon: Waypoints, layer: 'graph' },
+      { to: '/tools/semantic', label: 'Semantic', icon: Scale, layer: 'semantic' },
+      { to: '/tools/context', label: 'Context', icon: Brain, layer: 'context' },
     ],
   },
-  { label: 'Use them', items: [{ to: '/agents', label: 'Agents', icon: Bot }] },
+  {
+    label: 'Use them',
+    items: [
+      { to: '/agents', label: 'Agents', icon: Bot, layer: 'agents' },
+      { to: '/use', label: 'Use anywhere', icon: PackageOpen },
+    ],
+  },
 ]
 
 const NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((group) => group.items)
@@ -56,6 +64,12 @@ export function AppShell() {
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [drawerOpen])
+
+  // Only the layers this server offers (STRATA_LAYERS); all when it does not say.
+  const on = health?.layers
+  const groups = NAV_GROUPS
+    .map((g) => ({ ...g, items: g.items.filter((i) => !i.layer || !on || on.includes(i.layer)) }))
+    .filter((g) => g.items.length)
 
   const apiState = healthError
     ? { label: 'API unreachable', tone: 'rose' as const }
@@ -95,7 +109,7 @@ export function AppShell() {
         </div>
 
         <nav className="sidebar__nav" aria-label="Workspace">
-          {NAV_GROUPS.map((group) => (
+          {groups.map((group) => (
             <div key={group.label} className="nav-group">
               <p className="nav-group-label">{group.label}</p>
               {group.items.map((item) => {

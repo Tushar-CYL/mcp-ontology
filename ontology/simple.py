@@ -94,7 +94,7 @@ def _declared_links(layer, ontology_id: str, meta: dict | None) -> int:
     by_norm = {md.norm(t["table"].name): t for t in tables}
     concept_of = {i["payload"]["table"]: i["payload"]["concept"]
                   for i in reg.items(graph, ontology_id, kind="member")}
-    have = {i["key"] for i in reg.items(graph, ontology_id, kind="relationship")}
+    have = {i["key"]: i for i in reg.items(graph, ontology_id, kind="relationship")}
     added = 0
     for r in meta["relationships"]:
         t, u = by_norm.get(md.norm(r["from_table"])), by_norm.get(md.norm(r["to_table"]))
@@ -107,19 +107,139 @@ def _declared_links(layer, ontology_id: str, meta: dict | None) -> int:
         if not col or not key:
             continue
         link = f"{t['key']}.{col}->{u['key']}.{key}"
-        if link in have or t["key"] == u["key"]:
+        if t["key"] == u["key"]:
+            continue
+        if link in have:
+            # The engine found it too: it is still the model's link (an exact
+            # build keeps only declared links), already measured.
+            item = have[link]
+            p = item["payload"]
+            if not p.get("declared"):
+                matched = p.get("matched")
+                reg.put(graph, ontology_id, "relationship", link,
+                        {**p, "declared": meta["file"],
+                         "check": p.get("check") or ("verified" if (matched or 0) >= 0.95 else "conflict")},
+                        confidence=item.get("confidence") or matched or 0.9,
+                        evidence=list(item.get("evidence") or []) + [f"also declared in {meta['file']}"])
             continue
         stats = measure_relationship(graph, t, u, col, key)
         reg.put(graph, ontology_id, "relationship", link, {
             "from_concept": concept_of.get(t["key"], t["class"]),
             "to_concept": concept_of.get(u["key"], u["class"]),
             "from": f"{t['key']}.{col}", "to": f"{u['key']}.{key}",
-            "declared": meta["file"], **stats},
+            "declared": meta["file"], **stats,
+            # Declared is not proven: below 95% of rows finding their target,
+            # the data disagrees with the link, and the screen says so.
+            "check": "verified" if stats["matched"] >= 0.95 else "conflict",
+            "cardinality": stats.get("cardinality") or r.get("cardinality") or "many-to-one"},
             confidence=stats["matched"],
             evidence=[f"declared in {meta['file']}; checked: {stats['matched']:.0%} of "
                       f"{t['key']} rows find their {u['key']} row"])
         added += 1
     return added
+
+
+_MODEL_KINDS = ("profile", "concept", "member", "mapping", "relationship", "finding",
+                "property", "hierarchy", "identity")
+
+
+def _table_in(meta: dict, table_key: str) -> bool:
+    return md.match_table(meta, table_key.split(".", 1)[-1]) is not None
+
+
+def _tables_of(item: dict) -> list[str]:
+    """The tables ('source.table') a registry item is about."""
+    p, kind = item["payload"], item["kind"]
+    if kind == "profile":
+        return [item["key"]]
+    if kind == "concept":
+        return list(p.get("members") or [])
+    if kind == "relationship":
+        return [str(p.get(end, "")).rsplit(".", 1)[0] for end in ("from", "to") if p.get(end)]
+    if p.get("table"):
+        return [str(p["table"])]
+    return []
+
+
+def keep_model_tables(layer, ontology_id: str, meta: dict) -> list[str]:
+    """Your model, exactly: tables it does not name are not part of the
+    ontology. Returns the tables left out, so the build can say so."""
+    graph = layer.graph
+    dropped: set = set()
+
+    def delete(item):
+        with graph.lock:
+            graph.con.execute("DELETE FROM eo_items WHERE ontology_id = ? AND kind = ? AND key = ?",
+                              [ontology_id, item["kind"], item["key"]])
+
+    for item in reg.items(graph, ontology_id):
+        if item["kind"] not in _MODEL_KINDS:
+            continue
+        tables = _tables_of(item)
+        outside = [t for t in tables if not _table_in(meta, t)]
+        if not outside:
+            continue
+        dropped.update(outside)
+        if item["kind"] == "concept" and len(outside) < len(tables):
+            # A thing that also holds a modelled table keeps that table only.
+            keep = [t for t in tables if t not in outside]
+            reg.put(graph, ontology_id, "concept", item["key"],
+                    {**item["payload"], "members": keep}, fact=True)
+        else:
+            delete(item)
+    return sorted(dropped)
+
+
+def keep_model_links(layer, ontology_id: str) -> int:
+    """Your model, exactly: only the links it declares (each still measured
+    against the data). Links the engine found on its own are left out."""
+    graph = layer.graph
+    n = 0
+    for item in reg.items(graph, ontology_id, kind="relationship"):
+        if not item["payload"].get("declared"):
+            with graph.lock:
+                graph.con.execute("DELETE FROM eo_items WHERE ontology_id = ? AND kind = 'relationship'"
+                                  " AND key = ?", [ontology_id, item["key"]])
+            n += 1
+    return n
+
+
+def keep_model_fields(layer, ontology_id: str, meta: dict) -> int:
+    """Your model, exactly: where a table lists its fields, the others are left
+    out - except keys and link columns, which the other layers need to join."""
+    graph = layer.graph
+    needed = set()
+    for item in reg.items(graph, ontology_id, kind="relationship"):
+        needed |= {item["payload"].get("from"), item["payload"].get("to")}
+    n = 0
+    for item in reg.items(graph, ontology_id, kind="meaning"):
+        if not item["key"].startswith("column:"):
+            continue
+        m = item["payload"]
+        entry = md.match_table(meta, str(m.get("table", "")).split(".", 1)[-1])
+        if not entry or not entry.get("listed"):
+            continue
+        listed = md.column_info(meta, str(m["table"]).split(".", 1)[-1], m["column"])
+        is_key = m["column"] in (entry.get("key") or []) or m.get("role") == "identifier"
+        if listed is None and not is_key and m.get("key") not in needed and m.get("by") != "you":
+            with graph.lock:
+                graph.con.execute("DELETE FROM eo_items WHERE ontology_id = ? AND kind = 'meaning'"
+                                  " AND key = ?", [ontology_id, item["key"]])
+            n += 1
+    return n
+
+
+def _model_notes(graph, ontology_id: str, meta: dict) -> int:
+    """Notes written in the model come in as notes, once."""
+    have = {i["payload"].get("text") for i in reg.items(graph, ontology_id, kind="note")}
+    n = 0
+    for text in meta.get("notes") or []:
+        if text and text not in have:
+            reg.put(graph, ontology_id, "note", f"{_now()}|model|{n}",
+                    {"text": text, "by": "your model", "at": _now(), "method": "model",
+                     "reply": "From your model.", "changes": []}, fact=True)
+            n += 1
+    return n
 
 
 def tidy_links(layer, ontology_id: str) -> list[str]:
@@ -257,6 +377,10 @@ def build(layer, ontology_id: str, client=None, progress=None) -> dict:
     say = progress or (lambda _line: None)
     graph = layer.graph
     onto = reg.get(graph, ontology_id)
+    mode = (reg.get_item(graph, ontology_id, "meaning", "build:mode", missing_ok=True)
+            or {"payload": {}})["payload"].get("mode", "data")
+    if mode == "keys":
+        client = None                              # keys only: no AI, on every rebuild
     started = time.perf_counter()
     _reset(graph, ontology_id)
     meta = mn.metadata_of(graph, ontology_id)
@@ -281,14 +405,31 @@ def build(layer, ontology_id: str, client=None, progress=None) -> dict:
             if step_id == "concepts":
                 tidy_links(layer, ontology_id)
         _forget_tables(graph, ontology_id, graph_sources)
+        exact = bool(meta and meta.get("exact"))
+        left_out: list[str] = []
+        if exact:
+            left_out = keep_model_tables(layer, ontology_id, meta)
+            if left_out:
+                say(f"Your model does not name {len(left_out)} table(s); they are left out")
         if meta:
             added = _declared_links(layer, ontology_id, meta)
             if added:
                 say(f"{added} link(s) declared in your metadata, checked against the data")
-        say("Writing plain meanings (AI checked against the data)...")
+        if exact:
+            keep_model_links(layer, ontology_id)
+            _model_notes(graph, ontology_id, meta)
+        if exact:
+            # Your names and meanings are used as written; the AI is not asked.
+            say("Using your model's names and meanings, checked against the data...")
+            client = None
+        else:
+            say("Writing plain meanings (AI checked against the data)...")
         t0 = time.perf_counter()
         summary = mn.enrich(layer, ontology_id, client=client, progress=say)
         steps.append({"id": "meaning", "seconds": round(time.perf_counter() - t0, 2)})
+        if exact:
+            keep_model_fields(layer, ontology_id, meta)
+            summary["model"] = {"file": meta["file"], "left_out": left_out}
     graph_state: dict = {}                       # merges types/links across graph sources
     for source in graph_sources:
         t0 = time.perf_counter()
@@ -323,10 +464,22 @@ def build(layer, ontology_id: str, client=None, progress=None) -> dict:
             "summary": summary}
 
 
+BUILD_MODES = {
+    "data": "Build from my data: the AI names things, the data checks every name",
+    "model": "Use my ontology exactly: your names, fields and links, checked against the data",
+    "keys": "Keys only: names from the columns and declared keys, no AI",
+}
+
+
 def create_and_build(layer, name: str, sources: list[str], metadata: list[str] | None = None,
                      domain: str = "", problem: str = "", client=None, progress=None,
-                     ontology_id: str | None = None) -> dict:
+                     ontology_id: str | None = None, mode: str = "data") -> dict:
     graph = layer.graph
+    if mode not in BUILD_MODES:
+        raise ValueError(f"mode must be one of {', '.join(BUILD_MODES)}")
+    if mode == "model" and not metadata:
+        raise ValueError("to use your ontology exactly, give its file (Strata Model JSON, "
+                         "Ossie YAML, dbt schema.yml or a data dictionary)")
     loaded = set(layer.graph.source_ids())
     missing = [s for s in sources if s not in loaded]
     if missing:
@@ -335,6 +488,8 @@ def create_and_build(layer, name: str, sources: list[str], metadata: list[str] |
         raise ValueError("connect at least one data source or give a semantic model / "
                          "data dictionary")
     metas = [md.parse(p) for p in metadata or []]       # fail before creating anything
+    if mode == "model":
+        metas = [{**m, "exact": True} for m in metas]
     # Choosing a free id and claiming it is one step: two builds with the
     # same name at the same moment must not pick the same id.
     with _CREATE_LOCK:
@@ -344,6 +499,7 @@ def create_and_build(layer, name: str, sources: list[str], metadata: list[str] |
     try:
         for meta in metas:
             reg.put(graph, oid, "metadata", meta["file"], meta, fact=True)
+        reg.put(graph, oid, "meaning", "build:mode", {"mode": mode}, fact=True)
         return build(layer, oid, client=client, progress=progress)
     except Exception:
         reg.delete_ontology(graph, oid)
@@ -406,7 +562,15 @@ def view(graph, ontology_id: str, version: int | None = None,
 
     By default it reads the live registry (what the screen edits). With
     `published=True` (or a `version`) it reads a frozen published version, so
-    an agent sees exactly the pinned ontology."""
+    an agent sees exactly the pinned ontology. Remembered while nothing it is
+    made from changes (ontology/cache.py)."""
+    from ontology import cache
+    reg.get(graph, ontology_id)                    # an unknown id is a KeyError, never cached
+    return cache.remember(graph, "view", ontology_id, (version, bool(published)),
+                          lambda: _view(graph, ontology_id, version, published))
+
+
+def _view(graph, ontology_id: str, version: int | None, published: bool) -> dict:
     onto = reg.get(graph, ontology_id)
     if published or version is not None:
         snap = reg.version(graph, ontology_id, version)
@@ -482,6 +646,9 @@ def view(graph, ontology_id: str, version: int | None = None,
                       "verb": p.get("verb"), "triples": p.get("triples"),
                       "relation": p.get("relation"),
                       "match": p.get("matched"), "declared": p.get("declared"),
+                      "check": p.get("check") or ("verified" if (p.get("matched") or 0) >= 0.95
+                                                  else "unchecked" if p.get("matched") is None
+                                                  else "conflict"),
                       "proof": item["evidence"][:3]})
     links.sort(key=lambda link: (-(link["triples"] or 0), link["label"]))
     hierarchies = [{"thing": by_key.get(i["payload"]["concept"], {}).get("name")
@@ -521,6 +688,7 @@ def view(graph, ontology_id: str, version: int | None = None,
         "version": versions[-1]["version"] if versions else None,
         "published_at": versions[-1]["published_at"] if versions else None,
         "built": last or None,
+        "mode": meanings.get("build:mode", {}).get("mode", "data"),
         "summary": {"things": len(things), "fields": sum(len(t["fields"]) for t in things),
                     "links": len(links), "checks": counts, "by": by_count,
                     # The one number the pitch rests on: how much of this

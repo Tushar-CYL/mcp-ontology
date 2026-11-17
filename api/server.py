@@ -518,6 +518,20 @@ def create_app(graph_path: str | Path | None = None,
     # ------------------------------------------------------- access token
     from api import auth as api_auth
 
+    from api import layers as api_layers
+
+    @app.middleware("http")
+    async def layer_switch(request: Request, call_next):
+        """A layer switched off on this server answers plainly instead of working."""
+        layer = api_layers.route_layer(request.url.path)
+        if layer and not api_layers.is_on(layer):
+            return JSONResponse(status_code=404, content={"error": {
+                "type": "LayerOff",
+                "message": f"the {layer} layer is switched off on this server "
+                           f"(on: {', '.join(api_layers.enabled())}). Start it with "
+                           f"STRATA_LAYERS={','.join(api_layers.enabled() + (layer,))}"}})
+        return await call_next(request)
+
     @app.middleware("http")
     async def api_token_guard(request: Request, call_next):
         if api_auth.allows(request):
@@ -598,6 +612,8 @@ def create_app(graph_path: str | Path | None = None,
     ctx_routes.register(app, platform, _error)
     from api import sem_routes
     sem_routes.register(app, platform, _error)
+    from api import agent_routes
+    agent_routes.register(app, platform, _error)
 
     # ---------------------------------------------------------- health
     @app.get("/api/health")
@@ -612,7 +628,37 @@ def create_app(graph_path: str | Path | None = None,
                 "llm": {"configured": configured,
                         "model": os.environ.get("EYQ_MODEL", "gpt-5.2")},
                 "warm_errors": state.warm_errors,
-                "warming": state.warming}
+                "warming": state.warming,
+                "layers": list(api_layers.enabled())}
+
+    @app.get("/api/bundle")
+    def bundle(request: Request, layers: str = "", ontology: str | None = None, ui: bool = True):
+        """A ready-to-run copy of Strata with only these layers (one zip,
+        Python only): unzip, double-click start.bat. With `ontology`, that
+        ontology goes in as a Strata Model to start from on their own data."""
+        import shutil
+        import tempfile
+        from starlette.background import BackgroundTask
+        from strata.bundle import make_bundle
+        try:
+            chosen = api_layers.parse(layers)
+        except ValueError as exc:
+            raise _error(400, "BadRequest", str(exc)) from exc
+        doc = None
+        if ontology:
+            from ontology import contract
+            doc = contract.to_contract(platform(request).layer.graph, ontology)   # KeyError -> 404
+        tag = "all" if chosen == api_layers.LAYERS else "-".join(x for x in chosen if x != "ontology") or "ontology"
+        work = Path(tempfile.mkdtemp(prefix="strata_bundle_"))
+        out = make_bundle(work / f"strata-{tag}.zip", ",".join(chosen), ontology=doc, include_ui=ui)
+        return FileResponse(out, media_type="application/zip", filename=out.name,
+                            background=BackgroundTask(shutil.rmtree, work, ignore_errors=True))
+
+    @app.get("/api/health/layers")
+    def health_layers(request: Request, ontology: str | None = None):
+        """Is each layer ready for this ontology? In plain words, per layer."""
+        from api.layer_health import report
+        return report(platform(request).layer, ontology)
 
     # --------------------------------------------------------- sources
     @app.get("/api/sources")
@@ -885,6 +931,11 @@ def create_app(graph_path: str | Path | None = None,
     def _agent(state: Platform, agent_id: str) -> dict:
         try:
             return state.runtime.get_agent(agent_id)
+        except KeyError:
+            pass
+        from agent import onto_agents
+        try:                                       # an agent of an ontology
+            return onto_agents.get(state.layer.graph, agent_id)
         except KeyError as exc:
             raise _error(404, "AgentError", f"no agent {agent_id!r}") from exc
 
@@ -1000,11 +1051,22 @@ def create_app(graph_path: str | Path | None = None,
         agent_id = connections.verify_key(state.layer.graph,
                                           _request_key(request))
         agent = None
+        onto_scope = None
         if agent_id is not None:
             try:
                 agent = state.runtime.get_agent(agent_id)
             except KeyError:
                 agent = None
+            if agent is None:
+                from agent import onto_agents
+                try:
+                    agent = onto_agents.get(state.layer.graph, agent_id)
+                    if agent["status"] == "retired":
+                        agent = None
+                    else:
+                        onto_scope = onto_agents.mcp_scope(state.layer.graph, agent)
+                except KeyError:
+                    agent = None
         if agent is None:
             return JSONResponse(
                 status_code=401,
@@ -1018,10 +1080,10 @@ def create_app(graph_path: str | Path | None = None,
         except ValueError:
             return JSONResponse(content={"jsonrpc": "2.0", "id": None, "error": {
                 "code": -32700, "message": "parse error"}})
-        scope = {"agent_id": agent_id,
-                 "sources": [agent["source_id"]] if agent.get("source_id") else [],
-                 "metrics": list(agent.get("metrics") or []),
-                 "tools": tools_for(agent.get("preset"))}
+        scope = onto_scope or {"agent_id": agent_id,
+                               "sources": [agent["source_id"]] if agent.get("source_id") else [],
+                               "metrics": list(agent.get("metrics") or []),
+                               "tools": tools_for(agent.get("preset"))}
         started = time.perf_counter()
         response = mcp_server.handle(message, state.layer, scope=scope)
         if isinstance(message, dict) and message.get("method") == "tools/call":

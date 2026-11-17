@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "strata"
+version = "1.0.0"
+description = "Ontology, knowledge graph, governed metrics and cited context from any data - each layer usable on its own."
+readme = "README.txt"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+# Floors, not pins: see requirements.txt for why.
+dependencies = [
+    "duckdb>=1.4,<3",
+    "PyYAML>=6.0,<7",
+    "rdflib>=7,<8",
+    "sqlalchemy>=2,<3",
+    "pytz>=2024.1",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+    "httpx>=0.27,<1",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3,<4"]
+mysql = ["pymysql>=1,<2"]
+odbc = ["pyodbc>=5,<6"]
+mongo = ["pymongo>=4,<5"]
+neo4j = ["neo4j>=5,<6"]
+oracle = ["oracledb>=2,<4"]
+snowflake = ["snowflake-connector-python>=3,<5"]
+databricks = ["databricks-sql-connector>=3,<5"]
+dev = ["pytest>=8.0,<10", "jsonschema>=4,<5"]
+
+[project.scripts]
+strata = "strata.cli:main"
+
+[tool.setuptools]
+py-modules = ["run_server"]
+
+[tool.setuptools.packages.find]
+include = ["strata*", "agent*", "api*", "context*", "knowledge_graph*", "ontology*",
+           "review*", "semantic*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.yaml", "*.yml", "*.md"]

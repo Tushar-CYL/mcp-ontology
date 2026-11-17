@@ -9,6 +9,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { ErrorState } from '../../components/ErrorState'
 import { LoadingState } from '../../components/LoadingState'
 import { PageHeader } from '../../components/PageHeader'
+import { UseElsewhere } from '../../components/UseElsewhere'
 import { SuggestionChips } from '../../components/SuggestionChips'
 import { useToast } from '../../context/ToastContext'
 import { useAsync } from '../../hooks/useAsync'
@@ -141,6 +142,8 @@ function Workspace({ oid, name, choices, onSwitch }: {
           </section>
         </>
       ) : null}
+
+      <UseElsewhere layer="context" oid={oid} />
     </div>
   )
 }

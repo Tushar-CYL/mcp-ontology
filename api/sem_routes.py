@@ -62,6 +62,24 @@ def register(app, platform, error) -> None:
     def layer(request: Request):
         return platform(request).layer
 
+    @app.get("/api/sem/{oid}/export")
+    def sem_export(oid: str, request: Request, format: str = "sql", status: str = "certified"):  # noqa: A002
+        """The metrics in another system's format: `sql` (CREATE VIEW per metric,
+        over the source tables by name) or `metricflow` (dbt semantic models)."""
+        from fastapi.responses import Response
+        from semantic import export
+        if format not in ("sql", "metricflow") or status not in ("certified", "all"):
+            raise error(400, "BadRequest", "format is sql or metricflow; status is certified or all")
+        from ontology import registry as reg
+        guard(lambda: reg.get(layer(request).graph, oid))
+        if format == "sql":
+            text = guard(lambda: export.sql_views(layer(request), oid, status=status))
+            return Response(text, media_type="application/sql", headers={
+                "Content-Disposition": f'attachment; filename="{oid}-metrics.sql"'})
+        text = guard(lambda: export.metricflow(layer(request), oid, status=status))
+        return Response(text, media_type="application/yaml", headers={
+            "Content-Disposition": f'attachment; filename="{oid}-metricflow.yml"'})
+
     @app.get("/api/sem/{oid}")
     def sem_overview(oid: str, request: Request):
         return guard(lambda: sem.overview(layer(request), oid))

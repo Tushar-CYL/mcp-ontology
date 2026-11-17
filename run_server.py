@@ -4,6 +4,9 @@
     python run_server.py --port 8010      another port
     python run_server.py --no-ui          API only (e.g. while running `npm run dev`)
     python run_server.py --rebuild-ui     force a fresh build of the web app
+    python run_server.py --layers semantic,context
+                                          offer only these layers (the ontology is
+                                          always on); same as STRATA_LAYERS
 
 The web app is a React build in frontend/dist. That folder is not in git, so
 on a fresh clone (and after a `git pull` that changed the frontend) this
@@ -108,9 +111,25 @@ def main(argv=None) -> int:
                         help="do not build or serve the web app (API only)")
     parser.add_argument("--rebuild-ui", action="store_true",
                         help="rebuild the web app even if it looks up to date")
+    parser.add_argument("--no-build", action="store_true",
+                        help="never run npm: serve the web app that is already built, if any")
+    parser.add_argument("--layers", default=os.environ.get("STRATA_LAYERS", ""),
+                        help="layers to offer: ontology, graph, semantic, context, agents "
+                             "(comma separated; default all; the ontology is always on)")
     args = parser.parse_args(argv)
+    from api import layers as api_layers
+    try:
+        chosen = api_layers.parse(args.layers)
+    except ValueError as exc:
+        parser.error(str(exc))
+    os.environ["STRATA_LAYERS"] = ",".join(chosen)
 
-    has_ui = False if args.no_ui else build_ui(force=args.rebuild_ui)
+    if args.no_ui:
+        has_ui = False
+    elif args.no_build:
+        has_ui = DIST_INDEX.exists()               # a bundle ships the built web app
+    else:
+        has_ui = build_ui(force=args.rebuild_ui)
     if args.no_ui:
         os.environ["STRATA_NO_UI"] = "1"
     import uvicorn
@@ -124,6 +143,8 @@ def main(argv=None) -> int:
         if args.no_ui:
             print("  For the web app run:  cd frontend && npm run dev  "
                   "-> http://localhost:5173", flush=True)
+    if chosen != api_layers.LAYERS:
+        print(f"  Layers on: {', '.join(chosen)}", flush=True)
     print("=" * 60 + "\n", flush=True)
     uvicorn.run("api.server:app", host=args.host, port=args.port,
                 reload=args.reload, log_level="info")

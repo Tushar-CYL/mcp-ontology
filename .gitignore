@@ -16,3 +16,8 @@ __pycache__/
 
 # a stray npm run from the project root
 node_modules/
+
+# python packaging output
+/build/
+*.egg-info/
+*.whl

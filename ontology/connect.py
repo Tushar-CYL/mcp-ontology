@@ -452,7 +452,7 @@ def _from_url(con, url: str, name: str | None) -> Schema:
             raise SourceError(
                 f"could not connect to {kind}: {type(exc).__name__}: {exc}\n"
                 f"  Check the URL, credentials and that the driver is "
-                f"installed (see README.txt, section 12).") from exc
+                f"installed (see README.txt, section 13).") from exc
     from ontology.anydb import schema_from_url
     ext = {"postgres": "postgres", "postgresql": "postgres",
            "mysql": "mysql"}.get(kind)

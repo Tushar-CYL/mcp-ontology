@@ -21,3 +21,18 @@ export async function copyText(text: string): Promise<boolean> {
     return false
   }
 }
+
+/** The file name the server gave (Content-Disposition), else the fallback. */
+export function fileName(contentDisposition: string | null, fallback: string): string {
+  const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(contentDisposition ?? '')
+  return m ? decodeURIComponent(m[1]) : fallback
+}
+
+/** An error answer in words a person can act on. */
+export function downloadError(status: number, body: unknown): string {
+  const msg = (body as { error?: { message?: string } } | null)?.error?.message
+    ?? `the server answered ${status}`
+  return /no route|older version/i.test(msg)
+    ? 'The server is older than this page. Stop it (Ctrl+C) and start it again with python run_server.py, then try again.'
+    : msg
+}

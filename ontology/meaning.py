@@ -295,7 +295,8 @@ def gather(layer, ontology_id: str) -> list[dict]:
         out.append({"key": t["key"], "source": t["source"], "table": t["table"].name,
                     "concept": concept_of.get(t["key"], t["class"]), "rows": prof["rows"],
                     "columns": columns, "pointed_at_by": pointed,
-                    "given": (entry or {}).get("description", "")})
+                    "given": (entry or {}).get("description", ""),
+                    "given_thing": (entry or {}).get("thing") or ""})
     return out
 
 
@@ -451,7 +452,8 @@ def decide_column(table: dict, c: dict, ai: dict | None) -> dict:
                       ai={"role": ai.get("role"), "unit": ai.get("unit")})
         if ai.get("unit") and not record["unit"]:
             record["unit"] = ai["unit"]
-    claimed = (ai or {}).get("role") or base_role
+    given_role = given.get("role") if given.get("role") in ROLES else None
+    claimed = given_role or (ai or {}).get("role") or base_role
     check, proof = verify(claimed, c, rows, c.get("reference_to"), samples)
     if pointed_at and claimed == "identifier" and check == "conflict":
         sources = ", ".join(thing_name(t.partition(".")[2] or t, t.partition(".")[0])
@@ -469,10 +471,17 @@ def decide_column(table: dict, c: dict, ai: dict | None) -> dict:
         return record
     if check == "conflict" and claimed != base_role:
         b_check, b_proof = verify(base_role, c, rows, c.get("reference_to"), samples)
-        record.update(role=base_role, check="conflict",
-                      proof=f"AI said '{ROLES.get(claimed, claimed)}' but {proof}; "
-                            f"kept '{ROLES[base_role]}' ({b_proof})",
-                      confidence=min(record["confidence"], 0.5))
+        if given_role:
+            # Your model wins: its role is kept, and the screen says the
+            # data disagrees (and why) instead of quietly changing it.
+            record.update(role=given_role, check="conflict",
+                          proof=f"your model says '{ROLES.get(given_role, given_role)}' but {proof}",
+                          confidence=min(record["confidence"], 0.5))
+        else:
+            record.update(role=base_role, check="conflict",
+                          proof=f"AI said '{ROLES.get(claimed, claimed)}' but {proof}; "
+                                f"kept '{ROLES[base_role]}' ({b_proof})",
+                          confidence=min(record["confidence"], 0.5))
     else:
         record.update(role=claimed, check=check, proof=proof)
         if check == "verified":
@@ -573,13 +582,17 @@ def enrich(layer, ontology_id: str, client=None, progress=None) -> dict:
         thing = answer.get("thing") or {}
         concept = t["concept"]
         current = things.get(concept)
-        if current is None or (thing.get("name") and current["by"] == "engine"):
+        given_thing = t.get("given_thing")
+        if current is None or (given_thing and current["by"] != "metadata") or (
+                thing.get("name") and current["by"] == "engine"):
             things[concept] = {
-                "concept": concept, "tables": [], "by": "ai" if thing.get("name") else "engine",
-                "name": thing.get("name") or thing_name(t["table"], t["source"]),
+                "concept": concept, "tables": current["tables"] if current else [],
+                "by": "ai" if thing.get("name") else "engine",
+                "name": given_thing or thing.get("name") or thing_name(t["table"], t["source"]),
                 "description": t.get("given") or thing.get("description") or "",
             }
-            if t.get("given"):
+            if t.get("given") or given_thing:
+                # The client's model names the thing: its name wins over the AI's.
                 things[concept]["by"] = "metadata"
         things[concept]["tables"].append(t["key"])
     used = set()

@@ -1,11 +1,14 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight, Check, CircleCheck, CircleDashed, Copy, Download, FileJson, GitBranch, KeyRound,
+  ArrowRight, Check, CircleCheck, CircleDashed, Download, FileJson, GitBranch, KeyRound,
   Link2, Lock, MessageSquarePlus, Pencil, RefreshCw, Search, Send, Share2, Table2,
   TriangleAlert, X,
 } from 'lucide-react'
 import { api, describeError } from '../../api/client'
+import { CopyLine } from '../../components/CopyLine'
+import { DownloadLink } from '../../components/DownloadLink'
+import { UseElsewhere } from '../../components/UseElsewhere'
 import { SuggestionChips } from '../../components/SuggestionChips'
 import { useSuggestions } from '../../hooks/useSuggestions'
 import type { EoJob, OntoAsk, OntoCheck, OntoField, OntoThing, OntoView as View } from '../../api/types'
@@ -572,25 +575,6 @@ function AskResult({ r }: { r: OntoAsk }) {
 }
 
 /* ------------------------------------------------------------------- use it */
-function CopyLine({ label, value }: { label: string; value: string }) {
-  const toast = useToast()
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value)
-      toast.push({ title: 'Copied', message: label, tone: 'success' })
-    } catch {
-      toast.push({ title: 'Copy it by hand', message: value, tone: 'info' })
-    }
-  }
-  return (
-    <div className="onto-copy">
-      <span className="onto-copy__label">{label}</span>
-      <code className="onto-copy__value" title={value}>{value}</code>
-      <button type="button" className="onto-copy__btn" onClick={copy} aria-label={`Copy ${label}`}><Copy size={14} /></button>
-    </div>
-  )
-}
-
 function UseIt({ view }: { view: View }) {
   const use = useAsync((signal) => api.ontoUse(view.id, signal), [view.id, view.version])
   if (!use.data) return <p className="muted">Loading…</p>
@@ -623,12 +607,16 @@ function UseIt({ view }: { view: View }) {
         <p>Standard formats for other tools and for your Git repository.</p>
         <ul className="onto-use__files">
           <li><a href={u.files.json} target="_blank" rel="noreferrer"><FileJson size={15} /> JSON</a><span>Same tables as Nexus</span></li>
-          <li><a href={u.files.ossie}><FileJson size={15} /> Apache Ossie</a><span>Semantic-layer interchange (NVIDIA, Snowflake…)</span></li>
+          <li><DownloadLink href={u.files.model} fallback={`${view.id}.strata-model.json`}><FileJson size={15} /> Strata Model</DownloadLink><span>Open JSON: use this ontology on any copy of the data, or in another system</span></li>
+          <li><DownloadLink href={u.files.ossie} fallback={`${view.id}.ossie.yaml`}><FileJson size={15} /> Apache Ossie</DownloadLink><span>Semantic-layer interchange (NVIDIA, Snowflake…)</span></li>
           <li><a href={u.files.owl} target="_blank" rel="noreferrer"><Share2 size={15} /> OWL / Turtle</a><span>Standard ontology format</span></li>
           <li><a href={u.files.shacl} target="_blank" rel="noreferrer"><CircleCheck size={15} /> SHACL</a><span>Data quality rules</span></li>
-          <li><a href={u.files.git_zip}><GitBranch size={15} /> Git folder</a><span>Ontology as code (.zip)</span></li>
+          <li><DownloadLink href={u.files.git_zip} fallback={`${view.id}-ontology.zip`}><GitBranch size={15} /> Git folder</DownloadLink><span>Ontology as code (.zip)</span></li>
         </ul>
       </section>
+      <div className="onto-use__wide">
+        <UseElsewhere layer="ontology" oid={view.id} open />
+      </div>
     </div>
   )
 }
