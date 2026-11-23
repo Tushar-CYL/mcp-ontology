@@ -50,6 +50,15 @@ def register(app, platform, error) -> None:
                   sample: int = Query(kg.SAMPLE, ge=1, le=50)):
         return guard(lambda: kg.entity(platform(request).layer, oid, set, key, sample=sample))
 
+    @app.get("/api/kg/{oid}/connection")
+    def kg_connection(oid: str, request: Request, set: str = Query(..., max_length=300),  # noqa: A002
+                      key: str = Query(..., max_length=500), link: str = Query(..., max_length=500),
+                      offset: int = Query(0, ge=0, le=10_000_000), limit: int = Query(50, ge=1, le=200),
+                      q: str = Query("", max_length=100)):
+        """Drill down: one page of the records linked through one link."""
+        return guard(lambda: kg.connection(platform(request).layer, oid, set, key, link,
+                                           offset=offset, limit=limit, q=q))
+
     @app.get("/api/kg/{oid}/path")
     def kg_path(oid: str, request: Request,
                 from_set: str = Query(..., max_length=300), from_key: str = Query(..., max_length=500),
@@ -61,6 +70,10 @@ def register(app, platform, error) -> None:
     @app.get("/api/kg/{oid}/sample")
     def kg_sample(oid: str, request: Request):
         return guard(lambda: kg.sample(platform(request).layer, oid))
+
+    @app.get("/api/kg/{oid}/globe")
+    def kg_globe(oid: str, request: Request):
+        return guard(lambda: kg.globe(platform(request).layer, oid))
 
     @app.get("/api/kg/{oid}/expand")
     def kg_expand(oid: str, request: Request, set: str = Query(..., max_length=300),  # noqa: A002

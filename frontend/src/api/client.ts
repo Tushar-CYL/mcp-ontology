@@ -8,6 +8,12 @@ import type {
   OntoBuildRequest,
   OntoContextResult,
   OntoSuggestions,
+  OntoReviewQueue,
+  KgConnectionPage,
+  ReportCheckOverview,
+  ReportCheckInput,
+  CtxGaps,
+  OntoReviewResult,
   SuggestKind,
   OntoFieldEdit,
   OntoListResponse,
@@ -52,7 +58,7 @@ import type {
   IssuedKey,
   RunResponse,
   SourcesResponse,
-  CtxBuild, CtxInsights, KgEntity, SemCard, SemDetail, SemOverview, KgOverview, KgPath, KgPicture, KgRef, KgSearch,
+  CtxBuild, CtxInsights, KgEntity, SemCard, SemDetail, SemOverview, KgOverview, KgPath, KgGlobe, KgPicture, KgRef, LayerTrust, TrustLayer, BizRule, RulesListing, ImpactKind, ImpactResult, KgSearch,
 } from './types'
 
 /**
@@ -599,6 +605,19 @@ export const api = {
       method: 'POST', body: { text }, signal, timeoutMs: 180_000,
     }),
 
+  ontoReview: (oid: string, signal?: AbortSignal) =>
+    request<OntoReviewQueue>(`/onto/${encodeURIComponent(oid)}/review`, { signal, timeoutMs: 60_000 }),
+
+  ontoReviewDecide: (oid: string, body: { targets?: string[]; decision: 'approved' | 'rejected'; thing?: string },
+    signal?: AbortSignal) =>
+    request<OntoReviewResult>(
+      `/onto/${encodeURIComponent(oid)}/review`, { method: 'POST', body, signal, timeoutMs: 120_000 }),
+
+  ontoReviewUndo: (oid: string, target: string, signal?: AbortSignal) =>
+    request<OntoReviewResult>(`/onto/${encodeURIComponent(oid)}/review/undo`, {
+      method: 'POST', body: { target }, signal, timeoutMs: 120_000,
+    }),
+
   ontoSuggest: (oid: string, kind: SuggestKind, ai: boolean, signal?: AbortSignal) =>
     request<OntoSuggestions>(`/onto/${encodeURIComponent(oid)}/suggest?kind=${kind}&ai=${ai}`, {
       signal, timeoutMs: ai ? 90_000 : 30_000,
@@ -639,6 +658,11 @@ export const api = {
   kgEntity: (oid: string, set: string, key: string, signal?: AbortSignal) =>
     request<KgEntity>(`/kg/${encodeURIComponent(oid)}/entity${queryString({ set, key })}`, { signal }),
 
+  kgConnection: (oid: string, set: string, key: string, link: string, offset = 0, q = '', signal?: AbortSignal) =>
+    request<KgConnectionPage>(`/kg/${encodeURIComponent(oid)}/connection${queryString({
+      set, key, link, offset, limit: 25, q,
+    })}`, { signal, timeoutMs: 60_000 }),
+
   kgPath: (oid: string, from: KgRef, to: KgRef, maxHops = 4, signal?: AbortSignal) =>
     request<KgPath>(`/kg/${encodeURIComponent(oid)}/path${queryString({
       from_set: from.set, from_key: from.key, to_set: to.set, to_key: to.key, max_hops: maxHops,
@@ -646,6 +670,29 @@ export const api = {
 
   kgSample: (oid: string, signal?: AbortSignal) =>
     request<KgPicture>(`/kg/${encodeURIComponent(oid)}/sample`, { signal, timeoutMs: 120_000 }),
+
+  rules: (oid: string, signal?: AbortSignal) =>
+    request<RulesListing>(`/rules/${encodeURIComponent(oid)}`, { signal, timeoutMs: 120_000 }),
+  ruleAdd: (oid: string, text: string) =>
+    request<BizRule>(`/rules/${encodeURIComponent(oid)}`, { method: 'POST', body: { text }, timeoutMs: 120_000 }),
+  ruleActivate: (oid: string, id: string, owner: string) =>
+    request<BizRule>(`/rules/${encodeURIComponent(oid)}/${encodeURIComponent(id)}/activate`,
+      { method: 'POST', body: { owner } }),
+  ruleRetire: (oid: string, id: string) =>
+    request<BizRule>(`/rules/${encodeURIComponent(oid)}/${encodeURIComponent(id)}/retire`, { method: 'POST', body: {} }),
+  ruleCheck: (oid: string, id: string) =>
+    request<BizRule>(`/rules/${encodeURIComponent(oid)}/${encodeURIComponent(id)}/check`,
+      { method: 'POST', body: {}, timeoutMs: 120_000 }),
+  ruleRemove: (oid: string, id: string) =>
+    request<{ removed: string }>(`/rules/${encodeURIComponent(oid)}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  impact: (oid: string, kind: ImpactKind, key: string, signal?: AbortSignal) =>
+    request<ImpactResult>(`/impact/${encodeURIComponent(oid)}${queryString({ kind, key })}`, { signal, timeoutMs: 120_000 }),
+
+  layerTrust: (oid: string, layer: TrustLayer, signal?: AbortSignal) =>
+    request<LayerTrust>(`/trust/${encodeURIComponent(oid)}/${layer}`, { signal, timeoutMs: 120_000 }),
+
+  kgGlobe: (oid: string, signal?: AbortSignal) =>
+    request<KgGlobe>(`/kg/${encodeURIComponent(oid)}/globe`, { signal, timeoutMs: 180_000 }),
 
   kgExpand: (oid: string, set: string, key: string, signal?: AbortSignal) =>
     request<KgPicture>(`/kg/${encodeURIComponent(oid)}/expand${queryString({ set, key })}`, { signal }),
@@ -695,6 +742,33 @@ export const api = {
   ctxFeedback: (oid: string, question: string, text: string, signal?: AbortSignal) =>
     request<{ saved: boolean; changes: unknown[]; reply: string }>(`/ctx/${encodeURIComponent(oid)}/feedback`, {
       method: 'POST', body: { question, text }, signal, timeoutMs: 120_000,
+    }),
+
+  ctxChecks: (oid: string, signal?: AbortSignal) =>
+    request<ReportCheckOverview>(`/ctx/${encodeURIComponent(oid)}/checks`, { signal, timeoutMs: 30_000 }),
+
+  ctxChecksAdd: (oid: string, body: { checks?: ReportCheckInput[]; file_name?: string; file_content?: string },
+    signal?: AbortSignal) =>
+    request<ReportCheckOverview>(`/ctx/${encodeURIComponent(oid)}/checks`, {
+      method: 'POST', body, signal, timeoutMs: 60_000,
+    }),
+
+  ctxChecksRemove: (oid: string, id: string, signal?: AbortSignal) =>
+    request<ReportCheckOverview>(`/ctx/${encodeURIComponent(oid)}/checks/${encodeURIComponent(id)}`, {
+      method: 'DELETE', signal, timeoutMs: 30_000,
+    }),
+
+  ctxChecksRun: (oid: string, signal?: AbortSignal) =>
+    request<{ job_id: string; status: string }>(`/ctx/${encodeURIComponent(oid)}/checks/run`, {
+      method: 'POST', signal, timeoutMs: 30_000,
+    }),
+
+  ctxGaps: (oid: string, signal?: AbortSignal) =>
+    request<CtxGaps>(`/ctx/${encodeURIComponent(oid)}/gaps`, { signal, timeoutMs: 30_000 }),
+
+  ctxGapDismiss: (oid: string, key: string, signal?: AbortSignal) =>
+    request<CtxGaps>(`/ctx/${encodeURIComponent(oid)}/gaps?key=${encodeURIComponent(key)}`, {
+      method: 'DELETE', signal, timeoutMs: 30_000,
     }),
 
   kgNeo4jUrl: (oid: string) => `${API_BASE}/kg/${encodeURIComponent(oid)}/neo4j`,

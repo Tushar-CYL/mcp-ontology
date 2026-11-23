@@ -299,3 +299,19 @@ def test_only_meaningful_numbers_are_totalled(tmp_path):
                        status="draft")
     sem.propose(layer, oid)
     assert defs.get_definition(layer.graph, stale, sem.source_of(oid)) is None   # stale proposal removed
+
+
+def test_company_meaning_marks_only_a_metric_a_person_annotated(tmp_path):
+    """The 'company meaning' mark is set only when a person spelled out a note
+    for the metric (on certify or a decision); a plain proposal has none."""
+    layer = MiddleLayer(str(tmp_path / "g.duckdb"))
+    layer.add_source(str(make_amounts(tmp_path / "amounts.db")), source="shop")
+    oid = simple.create_and_build(layer, "Shop", ["shop"])["ontology"]
+    sem.propose(layer, oid)
+    cards = {c["name"]: c for c in sem.overview(layer, oid)["metrics"]}
+    assert all(c.get("company_meaning") is None for c in cards.values())   # nothing claimed
+    name = next(iter(cards))
+    sem.certify(layer, oid, name, owner="Finance",
+                note="Billed orders only; cancelled do not count")
+    after = next(c for c in sem.overview(layer, oid)["metrics"] if c["name"] == name)
+    assert after["company_meaning"] == "Billed orders only; cancelled do not count"

@@ -1,13 +1,14 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight, Check, CircleCheck, CircleDashed, Download, FileJson, GitBranch, KeyRound,
-  Link2, Lock, MessageSquarePlus, Pencil, RefreshCw, Search, Send, Share2, Table2,
+  ArrowRight, Check, CircleCheck, ClipboardCheck, CircleDashed, Download, FileJson, GitBranch, KeyRound,
+  Link2, ListChecks, Lock, MessageSquarePlus, Pencil, RefreshCw, Search, Send, Share2, Table2,
   TriangleAlert, X,
 } from 'lucide-react'
 import { api, describeError } from '../../api/client'
 import { CopyLine } from '../../components/CopyLine'
 import { DownloadLink } from '../../components/DownloadLink'
+import { TrustPanel } from '../../components/TrustPanel'
 import { UseElsewhere } from '../../components/UseElsewhere'
 import { SuggestionChips } from '../../components/SuggestionChips'
 import { useSuggestions } from '../../hooks/useSuggestions'
@@ -17,16 +18,21 @@ import { Callout } from '../../components/Callout'
 import { Card } from '../../components/Card'
 import { useToast } from '../../context/ToastContext'
 import { useAsync } from '../../hooks/useAsync'
+import { ThingIcon } from '../../components/ThingIcon'
 import { cx } from '../../utils/cx'
 import {
   CHECK, SET_BY, centralThing, checkedShare, conflictCount, filterFields, filterThings,
-  formatCount, matchLabel,
+  formatCount, matchLabel, thingProof,
 } from '../../utils/onto'
+import { DecisionLog } from './DecisionLog'
 import { DeleteOntology } from './DeleteOntology'
 import { OntoMap } from './OntoMap'
+import { ReviewPanel } from './ReviewPanel'
+import { RulesPanel } from './RulesPanel'
+import { WhatDepends } from '../../components/WhatDepends'
 import { JobLog } from './shared'
 
-export type Tab = 'overview' | 'map' | 'ask' | 'use'
+export type Tab = 'overview' | 'map' | 'rules' | 'ask' | 'use'
 
 const CHECK_ICON: Record<OntoCheck, typeof CircleCheck> = {
   verified: CircleCheck, conflict: TriangleAlert, unchecked: CircleDashed,
@@ -45,6 +51,9 @@ export function OntologyView({ view, tab, onTab, onChange, onDeleted }: {
   const [selected, setSelected] = useState<string | null>(null)
   const [onlyConflicts, setOnlyConflicts] = useState(false)
   const conflicts = view.summary.checks.conflict ?? 0
+  const review = view.summary.review
+  const toReview = review ? review.needs_you + review.spot_checks : 0
+  const [reviewing, setReviewing] = useState(false)
 
   const rebuild = async () => {
     try {
@@ -57,10 +66,10 @@ export function OntologyView({ view, tab, onTab, onChange, onDeleted }: {
   return (
     <div className="onto">
       <section className="onto-summary" aria-label="Summary">
-        <Metric value={formatCount(view.summary.things)} label="Business things" />
-        <Metric value={formatCount(view.summary.fields)} label="Fields explained" />
-        <Metric value={formatCount(view.summary.links)} label="Links proven" />
-        <Metric value={`${checkedShare(view.summary)}%`} label="Confirmed by the data" />
+        <Metric value={formatCount(view.summary.things)} label="Business things" hint={GLOSSARY.thing} />
+        <Metric value={formatCount(view.summary.fields)} label="Fields explained" hint={GLOSSARY.field} />
+        <Metric value={formatCount(view.summary.links)} label="Links proven" hint={GLOSSARY.link} />
+        <Metric value={`${checkedShare(view.summary)}%`} label="Confirmed by the data" hint={GLOSSARY.confirmed} />
         {conflicts ? (
           <button type="button" className="onto-summary__alert"
             onClick={() => { setOnlyConflicts(true); onTab('overview') }}>
@@ -70,12 +79,30 @@ export function OntologyView({ view, tab, onTab, onChange, onDeleted }: {
         ) : (
           <span className="onto-summary__ok"><CircleCheck size={16} aria-hidden="true" /> Nothing to fix</span>
         )}
+        {review ? (
+          <button type="button" className={cx('onto-summary__review', toReview > 0 && 'has-work')}
+            aria-expanded={reviewing} onClick={() => setReviewing((on) => !on)}
+            title="Review by exception: you only see what the data could not settle">
+            <ClipboardCheck size={16} aria-hidden="true" />
+            <span>{toReview > 0
+              ? <>
+                {review.needs_you ? <><strong>{formatCount(review.needs_you)}</strong> need you · </> : null}
+                {review.spot_checks ? <>{formatCount(review.spot_checks)} spot check{review.spot_checks === 1 ? '' : 's'} · </> : null}
+                {formatCount(review.confirmed)} confirmed by checks
+              </>
+              : <>Review: nothing needs you</>}</span>
+          </button>
+        ) : null}
         <div className="onto-summary__actions">
           <Button size="sm" variant="ghost" icon={<RefreshCw size={14} />} onClick={rebuild}
             disabled={Boolean(jobId)}>Rebuild</Button>
           <DeleteOntology id={view.id} name={view.name} onDeleted={onDeleted} />
         </div>
       </section>
+
+      {reviewing ? (
+        <ReviewPanel view={view} onChange={onChange} onClose={() => setReviewing(false)} />
+      ) : null}
 
       {jobId ? (
         <Card title="Rebuilding" subtitle="Your corrections and notes are kept.">
@@ -89,7 +116,8 @@ export function OntologyView({ view, tab, onTab, onChange, onDeleted }: {
       ) : null}
 
       <nav className="onto-tabs" role="tablist" aria-label="Views">
-        {([['overview', 'Overview', Table2], ['map', 'Map', Share2], ['ask', 'Ask', MessageSquarePlus],
+        {([['overview', 'Overview', Table2], ['map', 'Map', Share2], ['rules', 'Business rules', ListChecks],
+          ['ask', 'Ask', MessageSquarePlus],
           ['use', 'Use it', ArrowRight]] as const)
           .map(([id, label, Icon]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id}
@@ -103,19 +131,34 @@ export function OntologyView({ view, tab, onTab, onChange, onDeleted }: {
         <Explorer view={view} selected={selected} onSelect={setSelected}
           onlyConflicts={onlyConflicts} onOnlyConflicts={setOnlyConflicts} onChange={onChange} />
       ) : null}
+      {tab === 'overview' ? (
+        <TrustPanel key={`${view.version ?? 0}-${view.summary.review?.approved ?? 0}-${view.summary.review?.rejected ?? 0}`}
+          oid={view.id} layer="ontology" here={['review', 'notes']} />
+      ) : null}
+      {tab === 'overview' ? <DecisionLog oid={view.id} /> : null}
       {tab === 'map' ? (
         <OntoMap view={view} selected={view.things.find((t) => t.key === selected)?.name}
           onOpen={(key) => { setSelected(key); onTab('overview') }} />
       ) : null}
+      {tab === 'rules' ? <RulesPanel oid={view.id} /> : null}
       {tab === 'ask' ? <AskPanel view={view} /> : null}
       {tab === 'use' ? <UseIt view={view} /> : null}
     </div>
   )
 }
 
-function Metric({ value, label }: { value: string; label: string }) {
+/** Plain words first; the formal names (OWL, Palantir, graph databases) on hover. */
+const GLOSSARY = {
+  thing: 'A business thing is a kind of thing, like Customer or Sales Document. In ontology terms: a class or type (OWL class; object type in Palantir; node label in a graph database).',
+  record: 'A record is one real thing of that kind, like sales order 4711. In ontology terms: an object or instance (OWL individual; a node in the knowledge graph).',
+  field: 'A field describes a record, like Net Amount or Country. In ontology terms: an attribute or datatype property.',
+  link: 'A link joins two kinds of things, like "each Order Line belongs to one Sales Document". In ontology terms: a relationship or object property (an edge in the knowledge graph). Proven means the values really match in the data.',
+  confirmed: 'How much of what the AI said the data itself proved (values match, every value unique, ...). The rest is shown as not checked, never as a fact.',
+}
+
+function Metric({ value, label, hint }: { value: string; label: string; hint?: string }) {
   return (
-    <div className="onto-metric">
+    <div className="onto-metric" title={hint}>
       <span className="onto-metric__value">{value}</span>
       <span className="onto-metric__label">{label}</span>
     </div>
@@ -191,6 +234,30 @@ function Explorer({ view, selected, onSelect, onlyConflicts, onOnlyConflicts, on
   )
 }
 
+/** A thing's fields at a glance: proved by the data / data disagrees / still to
+ *  check. The honest three-part bar that replaces a single percentage. */
+function ThingProofBar({ thing }: { thing: OntoThing }) {
+  const { proved, disagrees, todo } = thingProof(thing)
+  const total = proved + disagrees + todo
+  if (!total) return null
+  const pct = (n: number) => `${(n / total) * 100}%`
+  return (
+    <div className="trustbar" aria-label="How much of this thing is proved">
+      <div className="trustbar__track" role="img"
+        aria-label={`${proved} proved, ${disagrees} the data disagrees with, ${todo} to check`}>
+        {proved ? <i className="is-proved" style={{ width: pct(proved) }} /> : null}
+        {disagrees ? <i className="is-bad" style={{ width: pct(disagrees) }} /> : null}
+        {todo ? <i className="is-todo" style={{ width: pct(todo) }} /> : null}
+      </div>
+      <div className="trustbar__keys">
+        <span className="k-proved"><b>{proved}</b> proved by the data</span>
+        {disagrees ? <span className="k-bad"><b>{disagrees}</b> the data disagrees</span> : null}
+        {todo ? <span><b>{todo}</b> still to check</span> : null}
+      </div>
+    </div>
+  )
+}
+
 function ThingDetail({ view, thing, query, onlyConflicts, onOnlyConflicts, onChange, onOpen }: {
   view: View
   thing: OntoThing
@@ -236,9 +303,10 @@ function ThingDetail({ view, thing, query, onlyConflicts, onOnlyConflicts, onCha
         ) : (
           <>
             <div className="onto-card__title">
+              <ThingIcon icon={thing.icon} tint size={22} />
               <div>
                 <h2>{thing.name}</h2>
-                <p>{thing.description}</p>
+                <p>{thing.description || <span className="muted">No description yet</span>}</p>
               </div>
             </div>
             <Button size="sm" variant="ghost" icon={<Pencil size={14} />} onClick={() => setRenaming(true)}>Rename</Button>
@@ -246,11 +314,13 @@ function ThingDetail({ view, thing, query, onlyConflicts, onOnlyConflicts, onCha
         )}
       </header>
       <dl className="onto-facts">
-        <div><dt>Records</dt><dd>{formatCount(thing.records)}</dd></div>
-        <div><dt>Fields</dt><dd>{thing.fields.length}</dd></div>
-        <div><dt>Links</dt><dd>{links.length}</dd></div>
-        <div><dt>Source table</dt><dd>{thing.tables.map((t) => <code key={t}>{t}</code>)}</dd></div>
+        <div title={GLOSSARY.record}><dt>Records</dt><dd>{formatCount(thing.records)}</dd></div>
+        <div title={GLOSSARY.field}><dt>Fields</dt><dd>{thing.fields.length}</dd></div>
+        <div title={GLOSSARY.link}><dt>Links</dt><dd>{links.length}</dd></div>
+        <div title="The table in your data these records come from. Nothing is copied or changed."><dt>Source table</dt><dd>{thing.tables.map((t) => <code key={t}>{t}</code>)}</dd></div>
       </dl>
+      <ThingProofBar thing={thing} />
+      <WhatDepends key={thing.name} oid={view.id} kind="thing" target={thing.name} compact />
 
       <div className="onto-subtabs" role="tablist">
         <button type="button" role="tab" aria-selected={sub === 'fields'} className={cx(sub === 'fields' && 'is-active')}
@@ -349,6 +419,9 @@ function FieldRow({ field, onEdit, onOpen }: { field: OntoField; onEdit: () => v
         <span className={`onto-check onto-check--${field.check}`}><Icon size={14} aria-hidden="true" /> {check.label}</span>
         {field.proof ? <span className="onto-field__proof">{field.proof}</span> : null}
         <span className="onto-field__by">Set by {SET_BY[field.by]}</span>
+        {field.review === 'approved' ? <span className="onto-field__review is-approved">Approved by a person</span> : null}
+        {field.review === 'rejected' ? <span className="onto-field__review is-rejected">Rejected by a person: not used in answers</span> : null}
+        {field.review === 'needs_you' ? <span className="onto-field__review is-open">Waiting for a person</span> : null}
       </div>
       <div className="onto-field__edit">
         <button type="button" onClick={onEdit} aria-label={`Edit ${field.label}`}><Pencil size={14} /></button>
@@ -400,6 +473,9 @@ function FieldEditor({ oid, field, roles, onDone }: {
       <div className="onto-field__save">
         <Button size="sm" variant="primary" icon={<Check size={14} />} loading={busy} onClick={save}>Save</Button>
         <Button size="sm" variant="ghost" onClick={() => onDone()}>Cancel</Button>
+      </div>
+      <div className="onto-field__impact">
+        <WhatDepends oid={oid} kind="field" target={field.key} open />
       </div>
     </div>
   )

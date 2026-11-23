@@ -45,8 +45,38 @@ def _best_field(view, words: set, allowed: set) -> tuple | None:
     return (best[1], best[2]) if best else None
 
 
+def adds_to(certified: dict, own: dict, wants_split: bool) -> bool:
+    """Strata's own query is used beside a matching certified metric only for
+    what the metric cannot give: the split the question asks for (when the
+    metric has none) or a filter the metric did not apply."""
+    split = wants_split and own.get("grouped") and certified.get("by") is None
+    extra_filter = bool(own.get("filters")) and not certified.get("filters")
+    return bool(split or extra_filter)
+
+
+_COUNTED = re.compile(r"\b(?:how many|number of|count of|count|most|fewest|least)\b", re.I)
+
+
 def _thing(view, question: str, allowed: set) -> dict | None:
-    """The thing being counted: the one the question names (plural ok)."""
+    """The thing being counted: the one the question names (plural ok).
+    The first thing named right after "how many" / "number of" / "most" is
+    the one counted ("how many orders from customers in GB" counts orders);
+    without such words, the later mention wins."""
+    anchors = list(_COUNTED.finditer(question))
+    if anchors:
+        after = ask.words(question[anchors[-1].end():])
+        first = None
+        for t in view["things"]:
+            if allowed and t["name"] not in allowed:
+                continue
+            tw = ask.words(t["name"])
+            for i in range(len(after) - len(tw) + 1):
+                if tw and after[i:i + len(tw)] == tw:
+                    if first is None or (i, -len(tw)) < (first[0], -first[1]):
+                        first = (i, len(tw), t)
+                    break
+        if first:
+            return first[2]
     words = ask.words(question)
     best = None
     for t in view["things"]:
@@ -90,16 +120,22 @@ def compute(layer, oid: str, question: str, linked: dict, view: dict, allowed: s
     member = field["table"] if field else _member(m, thing["name"])
     if not member or member not in m["sets"]:
         return None
-    base = sem._base(m, g, member)
+    # A value the question names on a parent (Country = DE on the customer's
+    # address) is selected for filtering even when it has too many values
+    # to group by. Found by the report check on SALT.
+    fact_name = m["sets"][member]["thing"]
+    extra = tuple((v["thing"], v["column"]) for v in linked.get("values") or [] if v["thing"] != fact_name)
+    base = sem._base(m, g, member, extra=extra)
     dims = base["dims"]
+    filter_cols = set(base.get("filter_columns") or [])
     own = {f["column"]: f for f in m["sets"][member]["fields"]}
 
     # Filters: values the question names, on the fact table or a safe parent.
     where, shown, used_dims = [], [], set()
     for v in linked.get("values") or []:
         alias = f"{sem._slug(v['thing'])}_{sem._slug(v['column'])}"
-        col = v["column"] if (v["column"] in own and v["thing"] == m["sets"][member]["thing"]) else \
-            alias if any(d["name"] == alias for d in dims) else None
+        col = v["column"] if (v["column"] in own and v["thing"] == fact_name) else \
+            alias if any(d["name"] == alias for d in dims) or alias in filter_cols else None
         if col is None:
             continue
         where.append(f"CAST({qi(col)} AS VARCHAR) = {sem._lit(v['value'])}")
@@ -111,14 +147,22 @@ def compute(layer, oid: str, question: str, linked: dict, view: dict, allowed: s
     from ontology import suggest as sg
     facts = sg._facts(g, oid)
     fact_thing = m["sets"][member]["thing"]
-    for f in sg._categories(facts, fact_thing):
+    names = [fact_thing, *facts["parents"].get(fact_thing, [])]
+    filterable = [f for n in names for t in facts["things"] if t["name"] == n for f in t["fields"]
+                  if f.get("role") in ("category", "location", "flag") and f["values"] and not f.get("personal")]
+    for f in filterable:
         alias = f"{sem._slug(f['thing'])}_{sem._slug(f['column'])}"
         col = f["column"] if f["thing"] == fact_thing and f["column"] in own else \
             alias if any(d["name"] == alias for d in dims) else None
         if col is None or col in used_dims:
             continue
         for value, _n_ in f["values"]:
-            if len(str(value)) >= 3 and re.search(rf"(?<![\w-]){re.escape(str(value))}(?![\w-])", q, re.I):
+            text = str(value)
+            # Short codes (DE, US, 10) count only written exactly as a code
+            # - capitals or digits - so "in" or "or" never become a filter.
+            short = len(text) == 2 and (text.isupper() or text.isdigit())
+            if (len(text) >= 3 and re.search(rf"(?<![\w-]){re.escape(text)}(?![\w-])", q, re.I)) or \
+                    (short and re.search(rf"(?<![\w-]){re.escape(text)}(?![\w-])", q)):
                 where.append(f"CAST({qi(col)} AS VARCHAR) = {sem._lit(value)}")
                 shown.append(f"{f['label']} = {value}")
                 used_dims.add(col)
@@ -142,6 +186,17 @@ def compute(layer, oid: str, question: str, linked: dict, view: dict, allowed: s
         if scored:
             d = max(scored, key=lambda x: x[0])[1]
             by_sql, by_label = qi(d["name"]), d["label"]
+        else:
+            # A field of the thing itself with too many values to be a metric
+            # dimension (Plant: hundreds) can still be ranked, top first.
+            own_scored = [(len(set(ask.words(f["label"]))), f) for f in m["sets"][member]["fields"]
+                          if f.get("role") in ("category", "location", "flag") and not f.get("personal")
+                          and f["column"] not in used_dims
+                          and set(ask.words(f["label"])) and set(ask.words(f["label"])) <= words
+                          and set(ask.words(f["label"])) & tail_words]
+            if own_scored:
+                f = max(own_scored, key=lambda x: x[0])[1]
+                by_sql, by_label = qi(f["column"]), f["label"]
     if by_sql is None and not where and not field and not COUNT.search(q):
         return None
 
@@ -174,7 +229,8 @@ def compute(layer, oid: str, question: str, linked: dict, view: dict, allowed: s
                     + (f" ({top[1] / total:.0%} of {_n(total)})" if total else "") + f"; {len(rows)} groups.")
     else:
         text = f"{what}: {_n(rows[0][0])}."
-    return {"columns": cols, "rows": rows, "sql": sql, "how": how, "text": text}
+    return {"columns": cols, "rows": rows, "sql": sql, "how": how, "text": text, "filters": shown,
+            "grouped": bool(by_sql)}
 
 
 def _n(v) -> str:

@@ -77,7 +77,7 @@ def test_search_by_id_and_by_name(shop):
     assert by_id[0]["key"] == "42"                              # exact ids first
     by_name = kg.search(layer, oid, "customer 17")["results"]
     assert by_name[0] == {"set": "shop.customer", "thing": _thing_name(shop, "shop.customer"),
-                          "key": "17", "label": "Customer 17"}
+                          "key": "17", "label": "Customer 17", "icon": "person"}
     assert kg.search(layer, oid, "Customer 1", thing="Nope")["results"] == []
     with pytest.raises(kg.GraphError):
         kg.search(layer, oid, "  ")
@@ -336,3 +336,21 @@ def test_graph_sample_skips_nothing_and_has_edges(kb):
     layer, oid = kb
     pic = kg.sample(layer, oid)
     assert pic["nodes"] and pic["edges"]
+
+
+def test_globe_draws_every_kind_of_thing_within_budget(shop):
+    """The globe picture: records from every keyed thing (one globe each),
+    the lines between them real links, and never more than the budget."""
+    layer, oid = shop
+    m = kg.model(layer, oid)
+    keyed = {s["member"] for s in m["sets"].values() if s["key"]}
+    pic = kg.globe(layer, oid, budget=60)
+    ids = {n["id"] for n in pic["nodes"]}
+    assert len(ids) <= 60
+    assert {n["set"] for n in pic["nodes"]} >= keyed                 # every thing has a globe
+    assert pic["edges"] and all(e["source"] in ids and e["target"] in ids for e in pic["edges"])
+    assert all(n["degree"] == sum(n["id"] in (e["source"], e["target"]) for e in pic["edges"])
+               for n in pic["nodes"])
+    assert pic["things"] and all(t["records"] > 0 for t in pic["things"])  # real totals for the globes
+    assert kg.globe(layer, oid, budget=60) == pic                    # steady: same picture every time
+

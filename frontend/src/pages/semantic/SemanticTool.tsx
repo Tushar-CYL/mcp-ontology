@@ -9,8 +9,11 @@ import { EmptyState } from '../../components/EmptyState'
 import { ErrorState } from '../../components/ErrorState'
 import { LoadingState } from '../../components/LoadingState'
 import { PageHeader } from '../../components/PageHeader'
+import { ProofMark } from '../../components/ProofMark'
 import { SuggestionChips } from '../../components/SuggestionChips'
+import { TrustPanel } from '../../components/TrustPanel'
 import { UseElsewhere } from '../../components/UseElsewhere'
+import { WhatDepends } from '../../components/WhatDepends'
 import { useToast } from '../../context/ToastContext'
 import { useAsync } from '../../hooks/useAsync'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
@@ -105,6 +108,7 @@ function Workspace({ oid, name, choices, onSwitch }: {
           </select>
         ) : null} />
 
+
       <p className="sem-summary">
         <span><BadgeCheck size={15} aria-hidden="true" /> <b>{o.summary.certified}</b> certified</span>
         <span><CircleHelp size={15} aria-hidden="true" /> <b>{o.summary.proposed}</b> proposed</span>
@@ -122,6 +126,7 @@ function Workspace({ oid, name, choices, onSwitch }: {
 
       <AddInWords oid={oid} refresh={o.metrics.length} onAdded={(n) => { reload(); setOpen(n) }} />
 
+      <TrustPanel oid={oid} layer="semantic" here={['semantic']} />
       <UseElsewhere layer="semantic" oid={oid} />
     </div>
   )
@@ -129,14 +134,19 @@ function Workspace({ oid, name, choices, onSwitch }: {
 
 function MetricCard({ m, active, onOpen }: { m: SemCard; active: boolean; onOpen: () => void }) {
   const spark = useMemo(() => (m.trend.length > 2 ? sparkOption(m.trend) : null), [m.trend])
+  const proof = m.drift.length ? 'disagrees' : m.status === 'certified' ? 'person' : 'guess'
+  const proofLabel = m.drift.length ? 'Needs a check' : m.status === 'certified'
+    ? (m.owner ? `Certified by ${m.owner}` : 'Certified') : 'AI draft'
   return (
     <button type="button" className={cx('sem-card', active && 'is-active', m.drift.length > 0 && 'is-drift')} onClick={onOpen}>
       <span className="sem-card__top">
         <span className="sem-card__title">{m.title}</span>
-        <span className={cx('sem-status', `is-${m.drift.length ? 'drift' : m.status}`)}>
-          {m.drift.length ? 'Check' : m.status === 'certified' ? 'Certified' : 'Proposed'}
-        </span>
+        <ProofMark kind={proof} size="sm" label={proofLabel} />
       </span>
+      {m.company_meaning ? (
+        <ProofMark kind="company" size="sm" label="Company meaning" detail={m.company_meaning}
+          className="sem-card__delta" />
+      ) : null}
       <span className="sem-card__value">{fmt(m.value, m.unit)}</span>
       {spark ? <EChart option={spark} ariaLabel={`${m.title} trend`} height={44} /> : <span className="sem-card__nospark" />}
       {m.synonyms.length ? <span className="sem-card__also">also: {m.synonyms.slice(0, 3).join(', ')}</span> : null}
@@ -269,6 +279,8 @@ function MetricPanel({ oid, name, onClose, onChange }: { oid: string; name: stri
           ))}
         </ul>
       ) : null}
+
+      <WhatDepends key={name} oid={oid} kind="metric" target={name} />
 
       <div className="sem-actions">
         {m.status !== 'certified' || m.drift.length ? (

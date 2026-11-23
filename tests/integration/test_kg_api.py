@@ -67,3 +67,12 @@ def test_graph_api_errors_are_plain(tmp_path, monkeypatch):
         assert c.get("/api/kg/nope/neo4j").status_code == 404
     finally:
         c.__exit__(None, None, None)
+
+
+def test_globe_route(tmp_path, monkeypatch):
+    c, oid = _client_with_shop(tmp_path, monkeypatch)
+    try:
+        r = c.get(f"/api/kg/{oid}/globe")
+        assert r.status_code == 200 and r.json()["nodes"] and r.json()["things"]
+    finally:
+        c.__exit__(None, None, None)

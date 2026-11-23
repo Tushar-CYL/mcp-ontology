@@ -1,0 +1,377 @@
+================================================================================
+STRATA - UPDATE PLAN, FULL HANDOVER
+How we will show the four layers so anyone can understand them
+Date: 23 November 2026
+================================================================================
+
+This one file has everything about the plan:
+  PART A - The goal (what the manager asked for)
+  PART B - The sources we researched, their URLs, and what each one showed
+  PART C - What we ALREADY built (done and tested)
+  PART D - What we WILL build (the plan, in order)
+  PART E - How each source shaped the plan
+  PART F - How we test it
+  PART G - Open questions for the manager
+
+Note on examples: names and numbers like "Order 1984611", "Muller GmbH" and
+"8.2 M EUR" are made-up examples. On a real screen every name, number and
+example is filled from the client's own data.
+
+
+================================================================================
+PART A - THE GOAL
+================================================================================
+
+The manager asked for three things:
+
+  1. Show the four layers (Ontology, Knowledge graph, Semantic, Context) in the
+     SIMPLEST way any person can understand - not technical.
+
+  2. A way that is UNIQUE to Strata.
+
+  3. A clear answer to "why should I trust it?", on two sides:
+       - the technical side (how it was built and how the data checks it), and
+       - the business side (where the company's own rules, meanings and people
+         come in).
+
+The big idea we landed on:
+
+  ONE REAL EXAMPLE, FOUR SIMPLE QUESTIONS.
+
+  Each layer answers one plain question about the SAME real record, so the user
+  sees one story, not four separate tools:
+
+     Ontology        -> "What is it?"
+     Knowledge graph -> "What is it connected to?"
+     Semantic        -> "How do we count it?"
+     Context         -> "What is the answer, and why believe it?"
+
+
+================================================================================
+PART B - THE SOURCES WE RESEARCHED (with URLs and what each showed)
+================================================================================
+
+--------------------------------------------------------------------------------
+SOURCE 1 - South Park Ontology Explainer   (shared by the manager)
+--------------------------------------------------------------------------------
+URL: https://southpark-ontology-explainer.jessica-tali-7056.chatgpt.site/
+
+What it is: a small interactive page that explains an ontology using South Park
+characters.
+
+What it showed us:
+  - Real individuals first (Stan, Randy), the type ("Person") second.
+  - Every fact written as a sentence: "Randy -> is parent of -> Stan".
+  - Solid line = a stated fact; dashed line = a fact worked out by a rule, with
+    "worked out from X and Y".
+  - One small picture of about 12 circles, never hundreds.
+  - A one-line plain summary of a record.
+  - A legend: solid = stated, dashed = inferred, dashed circle = a class/type.
+
+--------------------------------------------------------------------------------
+SOURCE 2 - Minimal Ontology Principle (Modern Data 101)   (shared by the manager)
+--------------------------------------------------------------------------------
+URL: https://moderndata101.substack.com/p/minimal-ontology-principle
+
+What it showed us:
+  - The AI already knows what most business words mean.
+  - So only write down where YOUR company's meaning DIFFERS from the usual one.
+    Example: "revenue" counted when the contract is signed, not when goods ship.
+  - Grow the definitions from the AI's mistakes, not all at once up front.
+
+--------------------------------------------------------------------------------
+SOURCE 3 - Visuals research: how the best tools show data to business users
+--------------------------------------------------------------------------------
+Full report: reports/Simpler ontology visuals for business.md
+Key research URLs:
+  - Graph reading / "hairball" limit (Yoghourdjian et al. 2020):
+    https://vcg.seas.harvard.edu/publications/20201001-scalability-of-network-visualisation-from-a-cognitive-load-perspective
+  - Knowledge-graph users prefer record pages to graphs (Li et al.):
+    https://arxiv.org/html/2304.01311
+
+Tools looked at: Palantir Foundry, Neo4j Bloom, Microsoft Fabric IQ, Stardog,
+Atlan, Collibra, ThoughtSpot.
+
+What it showed us:
+  - People struggle to read node-link pictures with more than about 50 dots.
+  - End users prefer a simple "profile page per record" to a graph screen.
+  - Almost every serious tool opens on: search -> list -> one record page, and
+    keeps the graph as an extra.
+
+--------------------------------------------------------------------------------
+SOURCE 4 - Databricks Genie Ontology and Genie Agents
+--------------------------------------------------------------------------------
+Full report: reports/Genie Ontology lessons and build plan.md
+URLs:
+  - https://docs.databricks.com/aws/en/genie/genie-ontology/
+  - https://www.databricks.com/product/genie/ontology
+  - https://www.databricks.com/blog/introducing-genie-one-genie-ontology-and-genie-agents
+  - https://docs.databricks.com/aws/en/genie/concepts
+  - https://docs.databricks.com/en/genie/knowledge-store
+  - https://www.databricks.com/blog/how-build-production-ready-genie-spaces-and-build-trust-along-way
+  - https://docs.databricks.com/aws/en/business-semantics
+  Third-party views:
+  - https://atlan.com/know/ai-agent/databricks/genie-ontology/
+  - https://genloop.ai/blogs/understanding-genie-ontology
+  - https://www.typedef.ai/blog/what-is-genie-ontology-databricks-continuously-learned-context-layer-explained
+  - https://itdaily.com/blogs/cloud/databricks-genie-ontology/
+
+What it showed us (the good parts to copy):
+  - A citation under each answer: click it to see which facts were used.
+  - "Is this correct?" with Yes / Fix it / Request review on every answer.
+  - A "Trusted" mark when an answer used an expert-written query.
+  - Benchmarks: test questions with a dated accuracy score.
+  - Matching words to real values ("Florida" -> FL).
+  - Their own trust advice: write 10-15 test questions with experts, get above
+    80% before sharing, and SHOW USERS THE SCORE.
+
+What it showed us (its weak spots = our opening):
+  - It ranks definitions but NEVER checks the answer against the data. A popular
+    definition can still give a wrong number.
+  - About 1 in 6 answers was wrong in its own test (84.5% on 28 questions), and
+    it does not warn the user when unsure.
+  - What it learns changes silently - you cannot see or approve it.
+  - When two definitions clash, it picks one itself; the user never sees both.
+
+--------------------------------------------------------------------------------
+SOURCE 5 - Semantica (open-source context-graph library)
+--------------------------------------------------------------------------------
+URLs:
+  - https://github.com/semantica-agi/semantica
+  - https://getsemantica.ai/
+
+What it is: an open-source Python library (MIT licence, ~14.7k GitHub stars,
+version 0.x so still early). It builds a "context graph" of things, facts and
+decisions for AI agents.
+
+What it showed us (ideas to take):
+  - Evidence on every fact: where it came from (table/column, or document/page).
+  - Trust grows when more sources agree (bronze/silver/gold tiers).
+  - Conflicts are flagged, never silently overwritten.
+  - A decision log: who decided what, when and why.
+  - Point-in-time: see things as they were on a past date.
+  - It says plainly what is NOT explained (not the AI's internal reasoning).
+
+What it showed us (its weak spots):
+  - Its only screen is a developer workbench - too technical for business users.
+  - No metrics layer, no plain-language cards.
+  - It does not check answers against the data either.
+  - Its speed and compliance claims are self-reported.
+
+--------------------------------------------------------------------------------
+SOURCE 6 - Strata today (our own code)
+--------------------------------------------------------------------------------
+This is the baseline we are improving. See PART C.
+
+
+================================================================================
+PART C - WHAT WE ALREADY BUILT (done, tested; not committed yet)
+================================================================================
+
+  #  WHAT                 WHERE IT SHOWS        WHAT IT DOES
+  -  -------------------  --------------------  -----------------------------------
+  1  Review queue         Ontology              A person approves or rejects AI guesses
+  2  Report check         Context               Compares Strata's answers with the
+                                                company's own report numbers
+  3  Unanswered questions Context               Lists questions Strata could not answer
+     (gaps)
+  4  KG drill-down        Knowledge graph       Opens records and follows their links
+  5  Globe graph          Knowledge graph       Groups records per thing on a ring
+                                                (the view the manager liked)
+  6  Trust panel          All 4 pages           Shows TECHNICAL PROOF (how built and
+                                                checked) next to BUSINESS KNOWLEDGE
+                                                (what people added, what is missing)
+  7  Business rules       Ontology              A rule in plain words -> checked on the
+                                                data -> a person switches it on with an
+                                                owner -> the AI then uses it
+  8  Impact               Fields, things,       Lists everything a change would affect,
+     ("What depends        metrics, rules       and who to tell
+     on this")
+
+  Status: all of the above have unit + integration tests passing. Business rules
+  and Impact were not yet tried live in the browser (the test server was down).
+
+  PLUS, started in this session (Step 1.1 below, with tests passing):
+  - Readable record names, a one-sentence summary per record, and an icon per
+    thing type (new file ontology/look.py; summary added in
+    knowledge_graph/explore.py; a person can choose the "name field" per thing).
+
+
+================================================================================
+PART D - WHAT WE WILL BUILD (the plan, in order)
+================================================================================
+
+THE FOUR SCREENS (what the user sees first on each):
+
+  LAYER            QUESTION                      FIRST THING ON SCREEN
+  ---------------  ----------------------------  ------------------------------------
+  Ontology         What is it?                   "An Order is a customer's request to
+                                                 buy. Example: Order 1984611. One of
+                                                 512,000."
+  Knowledge graph  What is it connected to?      "Order 1984611 has 4 order lines, was
+                                                 placed by Muller GmbH, was billed in
+                                                 Invoice 90012."
+  Semantic         How do we count it?           "Revenue here means billed orders,
+                                                 cancelled ones left out. (DIFFERS from
+                                                 the usual meaning.)"
+  Context          What is the answer, and why   "I read it as [Revenue][Germany][2024]
+                   believe it?                   -> 8.2 M EUR, proved from 3 facts."
+
+ONE LEGEND, THE SAME ON EVERY PAGE:
+
+  MARK        MEANING                                        LOOK
+  ----------  ---------------------------------------------  ----------------
+  check       Proved by the data                             solid, green
+  question    AI guess, not checked yet                      dashed, grey
+  recycle     Worked out by a business rule                  dashed, purple
+  cross       The data disagrees                             solid, orange
+  person      Approved by a person (name + date)             blue
+  diamond     The company's meaning differs from the usual   amber
+
+  Click any mark -> an evidence drawer opens: the source, the check and its
+  count, the date, who approved it, and "agreed by N sources".
+
+TODAY vs IMPROVED, PER LAYER:
+
+  Ontology:
+    Today    - a table of fields with codes, one "81%" number, 5 tabs.
+    Improved - a THING CARD: one meaning sentence, one real example as fact
+               sentences with marks, "one of 512,000"; a 3-part bar (proved /
+               data disagrees / for you to decide); rules as on/off switches;
+               3 tabs; the field table behind "Show all fields".
+
+  Knowledge graph:
+    Today    - about 150 dots; codes like "Sales Document 0001984611".
+    Improved - a RECORD CARD: a readable name + one-sentence summary; linked
+               records grouped by verb with counts ("has 4 order lines"); search
+               + starting examples from the data; a picture only on request (20
+               dots max); globes kept as the overview.
+
+  Semantic:
+    Today    - metric cards; the formula and SQL take a lot of space.
+    Improved - a MEANING CARD: "An AI would assume..." next to "Here it means...",
+               with the diamond only where they differ; badges (approved / checked
+               on data / AI draft); SQL behind a button; a maths check before
+               certifying.
+
+  Context:
+    Today    - build steps and a list of facts.
+    Improved - an ANSWER CARD: "I read it as" chips you can change; a short answer
+               with a trust line; facts as clickable chips; "I left out 1 number
+               I could not prove"; "Is this right?" buttons; the version + an
+               "as of" replay; an honest line on what is and isn't explained.
+
+BUILD ORDER (S = 1-2 days, M = 3-5 days):
+
+  STEP 1 - FOUNDATIONS (used by every page)
+    1.1  Readable record names + one-sentence summary + icon per thing   [M] STARTED
+         Files: knowledge_graph/explore.py, ontology/simple.py, ontology/look.py
+    1.2  One shared legend and marks (one status function, one component)  [S]
+         Files: api/trust.py, new frontend components ProofMark, Legend
+    1.3  Running example picked from the data + "Following..." strip +
+         the 4-step top bar                                                [S]
+         Files: new ontology/example.py, new component LayerBar
+    1.4  Evidence drawer for any fact (source, check, count, date,
+         approver, agreed-by-N)                                            [M]
+         Files: new api/evidence.py (reuses trust, review, business_rules,
+         report_check), new component EvidenceDrawer
+
+  STEP 2 - THE FOUR CARDS
+    2.1  Record card as the default KG view; globes as overview; picture
+         on request                                                        [M]
+    2.2  Thing card; 3-part trust bar; tabs 5 -> 3                          [M]
+    2.3  Meaning card; diamond mark; "An AI would assume" line; maths check [M]
+    2.4  Answer card: "I read it as" chips, fact chips, "I left out",
+         "Is this right?"                                                  [M]
+
+  STEP 3 - LEARNING AND TRUST
+    3.1  Rules as switches; rule results drawn dashed with "worked out from"[M]
+    3.2  Misreads inbox: corrected chips + "No" answers -> "Make it a
+         company meaning"                                                  [M]
+    3.3  Trust line in every header + "what got better/worse" after a change[S]
+    3.4  Conflict card: two definitions side by side, a person picks one   [M]
+    3.5  Decision log: who decided what/when/why; CSV/JSON download        [S]
+    3.6  "As of" replay of an answer + the honest scope line               [M]
+    3.7  5-step tour on the running example                                [S]
+
+  LATER
+    - "Same thing, or two?" duplicate check
+    - Record history line ("open -> delivered -> billed")
+    - Multi-step "why" reports
+
+  We STOP after each step so the manager can try it.
+
+
+================================================================================
+PART E - HOW EACH SOURCE SHAPED THE PLAN (one idea each)
+================================================================================
+
+  SOURCE                 THE ONE IDEA WE TAKE            WHERE IT LANDS
+  ---------------------  ------------------------------  -------------------------
+  South Park             Real examples first; facts as   Thing card, Record card,
+                         sentences; solid vs dashed      rules as switches
+  Minimal Ontology       Define only where YOUR meaning  Diamond mark, Meaning card,
+                         differs; grow from mistakes     misreads inbox
+  Visuals research       Fewer than ~20 dots; one        Record card default, small
+                         record page before any graph    picture on request
+  Databricks Genie       Citations; "Is this correct?";  Answer card chips, "Is this
+                         show the accuracy score         right?", trust line
+  Semantica              Evidence per fact; agreed-by-N; Evidence drawer, conflict
+                         conflicts flagged; decision     card, decision log, "as of"
+                         log; "as of"; honest scope      replay, honest line
+
+  OUR UNIQUE ANGLE (nobody else does all three):
+    1. Every sentence carries its PROOF from the data (check / cross / ?).
+    2. The DIAMOND mark shows only where the company meaning differs.
+    3. The SAME real example runs through all four pages.
+
+  NOT TAKEN (too technical or too big for us now):
+    - RDF/OWL exports on the main screens
+    - developer graph workbenches
+    - PageRank-style scoring
+    - learning silently from Slack or query history
+
+
+================================================================================
+PART F - HOW WE TEST IT
+================================================================================
+
+  CHECK              HOW
+  -----------------  --------------------------------------------------------------
+  Tests first        pytest integration tests for every back-end piece, in batches
+                     (laptop has 7.4 GB RAM); vitest for the UI logic
+  Code quality       tsc, eslint and the build all clean
+  Live check         scratch server on port 8011 with the scratch DB - NEVER the
+                     main platform.duckdb; Playwright screenshots of each card
+  Real-data check    every number on a card equals an independent SQL count
+  1-minute user test show each card to 2-3 of the client's managers; can they
+                     answer "What is an Order here?", "What is it connected to?",
+                     "Why is revenue 8.2 M?", "Which fact is only a guess?" unaided
+  Keep measuring     time to first correct answer; how many answers get corrected;
+                     how many company meanings get saved
+
+  Rules we keep: no demo data in the main DB; suggestions and examples only from
+  the real data; simple pictures-first screens; commit only when asked; no Docker.
+
+
+================================================================================
+PART G - OPEN QUESTIONS FOR THE MANAGER
+================================================================================
+
+  1. Which record should the running example start from? By default it is picked
+     from the data: a complete, typical order.
+
+  2. For SAP data that has only codes: who can tell us which field is the
+     readable name for each thing?
+
+  3. Should the 5-step tour be on by default for new users?
+
+
+================================================================================
+WHERE THE FULL REPORTS LIVE (for deeper reading)
+================================================================================
+  reports/Strata four layers update plan.md        - the design, long form
+  reports/Simpler ontology visuals for business.md  - the visuals research
+  reports/Genie Ontology lessons and build plan.md  - the Databricks reading
+  (This handover file summarises all of them in one place.)
+================================================================================

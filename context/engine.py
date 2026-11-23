@@ -45,7 +45,8 @@ GENERIC = {"value", "id", "date", "name", "number", "code", "type", "time", "fla
            "info", "data", "text", "desc", "description"}
 SOURCE_LABEL = {"record": "from the data", "link": "from the data", "count": "from the data",
                 "number": "computed from the data", "check": "data check",
-                "meaning": "meaning, checked against the data", "note": "your note"}
+                "meaning": "meaning, checked against the data", "note": "your note",
+                "rule": "business rule, checked on the data"}
 
 
 class ContextError(ValueError):
@@ -421,6 +422,10 @@ def gather(layer, ontology_id: str, question: str, linked: dict, scope: dict, vi
         for f in t["fields"]:
             if f["key"] not in linked_fields:
                 continue
+            if f.get("review") == "rejected":
+                quarantined.append({"what": f"{t['name']}.{f['label']}",
+                                    "why": "a person rejected its meaning"})
+                continue
             if f["check"] == "conflict":
                 quarantined.append({"what": f"{t['name']}.{f['label']}",
                                     "why": f"the data disagrees with its meaning ({f['proof']})"})
@@ -437,6 +442,17 @@ def gather(layer, ontology_id: str, question: str, linked: dict, scope: dict, vi
         if set(ask.words(text)) & qwords:
             facts.append(_fact(f"Note from the business: {text}", "note", 7, f"note:{n.get('key')}"))
 
+    # Active business rules about the things in scope (or naming the
+    # question's words), each with its owner and what the data found.
+    try:
+        from ontology import business_rules as br
+        for r in br.active(layer.graph, ontology_id):
+            thing = r["spec"].get("thing")
+            if thing in scope["in_scope"] or set(ask.words(r["text"])) & qwords:
+                facts.append(_fact(br.as_fact(r), "rule", 8, f"rule:{r['id']}"))
+    except Exception:                              # noqa: BLE001 - rules are a bonus, never a blocker
+        pass
+
     # Data problems on the links in scope: said, not hidden.
     try:
         health = kg.overview(layer, ontology_id)["health"]
@@ -450,7 +466,28 @@ def gather(layer, ontology_id: str, question: str, linked: dict, scope: dict, vi
     computed = None
     # One definition everywhere: a certified metric answers before any AI SQL.
     certified = _certified(layer, ontology_id, question, linked)
-    if certified:
+    # Then a counting question Strata can write itself over proven links (no
+    # AI SQL) - also when a certified metric matches but cannot give the
+    # split or the filter the question asks for. Agents use the same order.
+    from agent import quick_numbers as qn
+    wants_split = bool(qn.GROUP.search(question) or qn.MOST.search(question)
+                       or qn.MONTH.search(question))
+    own = None
+    if not certified or (certified["by"] is None and wants_split) or not certified["filters"]:
+        try:
+            own = qn.compute(layer, ontology_id, question, linked, view)
+        except Exception:                          # noqa: BLE001 - the next way still runs
+            own = None
+        if own is not None and certified and not qn.adds_to(certified, own, wants_split):
+            own = None
+    if own is not None:
+        computed = {"columns": own["columns"], "rows": own["rows"], "sql": own["sql"],
+                    "how": own["how"], "by_strata": True}
+        for row in own["rows"][:10]:
+            pairs = ", ".join(f"{c} = {_num(v)}" for c, v in zip(own["columns"], row))
+            facts.append(_fact(f"Computed by Strata's own query ({own['how']}): {pairs}.",
+                               "number", 10, "sql:strata"))
+    elif certified:
         computed = certified
         how = f"certified metric {certified['title']}" + (
             f", owner {certified['owner']}" if certified.get("owner") else "") + (
@@ -571,9 +608,10 @@ def _fact_dict(f: Fact, i: int | None = None) -> dict:
 
 
 def build(layer, ontology_id: str, question: str, budget_chars: int = BUDGET, client=None,
-          instructions: str = "") -> dict:
+          instructions: str = "", phrase: bool = True) -> dict:
     """The whole pipeline, with each step's result and timing, for the screen
-    and for agents. Steps 1-4 never call the AI."""
+    and for agents. Steps 1-4 never call the AI. `phrase=False` skips the
+    AI's wording (step 5): the report check only needs the numbers."""
     question = str(question or "").strip()
     if not question:
         raise ContextError("type a question first")
@@ -594,7 +632,8 @@ def build(layer, ontology_id: str, question: str, budget_chars: int = BUDGET, cl
     packed = assemble(gathered["facts"], budget_chars)
     times["gather"] = time.perf_counter() - t
     t = time.perf_counter()
-    said = answer(client, question, packed, instructions=instructions)
+    said = (answer(client, question, packed, instructions=instructions) if phrase
+            else {"status": "skipped", "text": "", "cited": []})
     times["answer"] = time.perf_counter() - t
 
     sources = {s["source_id"]: s for s in graph.sources()}

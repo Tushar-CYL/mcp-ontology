@@ -128,8 +128,10 @@ def _parents(m: dict, g, member: str) -> list[dict]:
     return out
 
 
-def _base(m: dict, g, member: str) -> dict:
-    """The fact table plus its safe parents, with every dimension aliased."""
+def _base(m: dict, g, member: str, extra: tuple = ()) -> dict:
+    """The fact table plus its safe parents, with every dimension aliased.
+    `extra` names parent fields, as (thing, column), to select for filtering
+    even when they have too many values to group by (a Country to filter on)."""
     s = m["sets"][member]
     parents = _parents(m, g, member)
     dims, select = [], ["f.*"]
@@ -139,7 +141,7 @@ def _base(m: dict, g, member: str) -> dict:
             time_col, time_label = f["column"], f["label"]
         elif len(dims) < MAX_DIMS and _groupable(g, s["ref"], f):
             dims.append({"name": f["column"], "label": f["label"], "thing": s["thing"]})
-    joins = []
+    joins, filters_only = [], []
     for p in parents:
         ps = m["sets"][p["member"]]
         joins.append(f"LEFT JOIN {ps['ref']} {p['alias']} ON CAST({p['from_alias']}.{qi(p['child_col'])} AS VARCHAR)"
@@ -154,9 +156,13 @@ def _base(m: dict, g, member: str) -> dict:
                 label = f["label"] if str(f["label"]).lower().startswith(ps["thing"].lower().split()[-1]) \
                     or ps["thing"].lower() in str(f["label"]).lower() else f"{ps['thing']} {f['label']}"
                 dims.append({"name": alias, "label": label, "thing": ps["thing"]})
+            elif (ps["thing"], f["column"]) in extra and alias not in filters_only:
+                select.append(f"{p['alias']}.{qi(f['column'])} AS {qi(alias)}")
+                filters_only.append(alias)
     sql = f"SELECT {', '.join(select)} FROM {s['ref']} f " + " ".join(joins)
     return {"sql": sql.strip(), "dims": dims, "time": time_col, "time_label": time_label,
-            "joins": [p["text"] for p in parents], "thing": s["thing"], "member": member}
+            "joins": [p["text"] for p in parents], "thing": s["thing"], "member": member,
+            "filter_columns": filters_only}
 
 
 # --------------------------------------------------------------- propose
@@ -514,11 +520,17 @@ def card(layer, ontology_id: str, name: str) -> dict:
     except Exception:                              # noqa: BLE001 - shown as unknown
         total = None
     warnings = drift(layer, ontology_id, name) if d["status"] == "approved" else []
+    # A company-specific meaning is one a person has spelled out as a note on the
+    # metric (set when it is certified or chosen in a decision). That differs from
+    # the usual meaning of the word, so it carries the "company meaning" mark.
+    # (The definition's own caveats hold join details, not a meaning, so they are
+    # not used here.)
+    company = (meta.get("note") or "").strip() or None
     return {"name": name, "title": d["title"], "status": SHOWN.get(d["status"], d["status"]),
             "value": total, "unit": d.get("unit") or None, "format": d.get("format"),
             "trend": trend(layer, ontology_id, name), "thing": meta.get("thing"),
             "synonyms": d.get("synonyms") or [], "drift": warnings, "owner": d.get("owner") or None,
-            "dims": meta.get("dims") or [], "words": meta.get("words")}
+            "dims": meta.get("dims") or [], "words": meta.get("words"), "company_meaning": company}
 
 
 def overview(layer, ontology_id: str) -> dict:

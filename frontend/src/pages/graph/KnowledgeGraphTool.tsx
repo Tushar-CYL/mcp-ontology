@@ -8,12 +8,14 @@ import { EmptyState } from '../../components/EmptyState'
 import { ErrorState } from '../../components/ErrorState'
 import { LoadingState } from '../../components/LoadingState'
 import { PageHeader } from '../../components/PageHeader'
+import { TrustPanel } from '../../components/TrustPanel'
 import { UseElsewhere } from '../../components/UseElsewhere'
 import { useAsync } from '../../hooks/useAsync'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { cx } from '../../utils/cx'
 import { formatCount } from '../../utils/onto'
 import { GraphPicture } from './GraphPicture'
+import { RecordExplorer } from './RecordExplorer'
 
 /**
  * The Knowledge graph tool, kept simple: pick the data, press Build, watch
@@ -113,6 +115,7 @@ function Builder({ oid, name, choices, onSwitch }: {
           </select>
         ) : null} />
 
+
       <section className="kgb" aria-label="How the knowledge graph is built">
         <div className="kgb__head">
           <div>
@@ -188,7 +191,19 @@ function Builder({ oid, name, choices, onSwitch }: {
         ) : null}
       </section>
 
+      {phase === 'done' ? (
+        <section className="kg-records" aria-label="Your records">
+          <div className="kgb__head">
+            <div>
+              <h2>Your records</h2>
+              <p className="kg-muted">Read any record like a sentence. The dot picture is below, when you want it.</p>
+            </div>
+          </div>
+          <RecordExplorer oid={oid} />
+        </section>
+      ) : null}
       {phase === 'done' ? <GraphPicture oid={oid} /> : null}
+      {phase === 'done' ? <TrustPanel oid={oid} layer="graph" here={['graph']} /> : null}
 
       <UseElsewhere layer="graph" oid={oid} />
     </div>

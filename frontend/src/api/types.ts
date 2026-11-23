@@ -991,6 +991,9 @@ export interface OntoField {
   links_to: string | null
   /** The kind of personal data ("Email", "Phone number"...), when the field holds it. */
   personal?: string | null
+  /** Review by exception: which group the claim is in, and whether it is in the spot-check sample. */
+  review?: OntoReviewStatus
+  spot_check?: boolean
 }
 
 export interface OntoThing {
@@ -998,6 +1001,10 @@ export interface OntoThing {
   name: string
   description: string
   by: OntoSetBy
+  /** The icon name for this kind of thing (ontology/look.py). */
+  icon?: string
+  /** The field a person chose as this thing's readable name, if any. */
+  name_field?: string | null
   tables: string[]
   records: number
   fields: OntoField[]
@@ -1018,6 +1025,50 @@ export interface OntoLink {
   verb?: string | null
   relation?: string | null
   triples?: number | null
+  check?: OntoCheck
+  review?: OntoReviewStatus
+  spot_check?: boolean
+}
+
+export type OntoReviewStatus = 'needs_you' | 'confirmed' | 'disagrees' | 'set_by_you' | 'approved' | 'rejected'
+
+export type OntoReviewCounts = Record<OntoReviewStatus, number> & { spot_checks: number }
+
+export interface OntoReviewCard {
+  target: string
+  kind: 'field' | 'link'
+  thing: string
+  title: string
+  column: string
+  /** unproven: nothing in the data can settle it; spot_check: the data confirmed it, a person samples it. */
+  why: 'unproven' | 'spot_check'
+  evidence: { check: OntoCheck; proof: string; records?: number; match?: number | null }
+  claim: { label: string; meaning?: string; role?: string; links_to?: string | null; by?: string }
+  impact: number
+}
+
+export interface OntoReviewStats {
+  decisions: number
+  approved: number
+  rejected: number
+  acceptance_pct: number | null
+  spot_checked: number
+  checks_wrong_pct: number | null
+}
+
+export interface OntoReviewQueue {
+  ontology: string
+  counts: OntoReviewCounts
+  cards: OntoReviewCard[]
+  stats: OntoReviewStats
+  rejected_links: OntoLink[]
+}
+
+/** A decision's answer: the new queue plus the whole ontology, so the screen redraws once. */
+export type OntoReviewResult = Omit<OntoReviewQueue, 'ontology'> & {
+  ontology: OntoView
+  decided?: string[]
+  version?: number | null
 }
 
 export interface OntoNote {
@@ -1042,6 +1093,7 @@ export interface OntoSummary {
   links: number
   checks: Record<OntoCheck, number>
   by: Partial<Record<OntoSetBy, number>>
+  review?: OntoReviewCounts
 }
 
 export interface OntoBuilt {
@@ -1070,6 +1122,8 @@ export interface OntoView {
   summary: OntoSummary
   things: OntoThing[]
   links: OntoLink[]
+  /** Links a person rejected: no layer joins records through them. */
+  rejected_links?: OntoLink[]
   hierarchies: Array<{ thing: string; levels: string[]; proof: string[] }>
   calculations: Array<{ thing: string; name: string; expression: string; description: string }>
   notes: OntoNote[]
@@ -1208,6 +1262,81 @@ export interface KgPicture {
   edges: Array<{ id: string; source: string; target: string; label: string }>
 }
 
+/** The globe picture: records from every kind of thing, with real totals. */
+export interface KgGlobe extends KgPicture {
+  things: Array<{ thing: string; records: number; shown: number }>
+}
+
+/** A business rule: plain words, the check Strata read from them, and what the data says. */
+export interface BizRule {
+  id: string
+  ontology: string
+  text: string
+  spec: {
+    type: 'required' | 'range' | 'allowed' | 'unique' | 'exists' | 'excluded'
+    field: string
+    thing: string
+    label: string
+    column: string
+    values?: string[]
+    min?: number
+    max?: number
+    strict_min?: boolean
+    strict_max?: boolean
+  }
+  status: 'proposed' | 'active' | 'retired'
+  owner: string | null
+  by: string
+  decided_by: string | null
+  created_at: string
+  updated_at: string
+  result: {
+    checked?: number
+    failed?: number
+    passed_pct?: number
+    affected?: number
+    share_pct?: number
+    examples?: Array<{ record: string | null; value: string | null }>
+    at?: string
+    error?: string
+  }
+}
+
+export interface RulesListing {
+  ontology: string
+  rules: BizRule[]
+  suggestions: Array<{ text: string; why: string; broken: number; spec: { type: string; field: string } }>
+  conflicts: Array<{ rule: string; rule_text: string; metric: string; title: string; certified: boolean; text: string }>
+  summary: { active: number; proposed: number; failing: number }
+}
+
+export type ImpactKind = 'field' | 'metric' | 'thing' | 'rule'
+
+/** What depends on a field, metric, thing or rule, across every layer. */
+export interface ImpactResult {
+  ontology: string
+  target: { kind: ImpactKind; key: string; title: string }
+  summary: string
+  total: number
+  tell: string[]
+  groups: Array<{ layer: string; title: string; items: Array<{ text: string; detail: string; ref: string }> }>
+}
+
+export type TrustLayer = 'ontology' | 'graph' | 'semantic' | 'context'
+
+/** Why a layer can be trusted: the data's proof beside the people's knowledge. */
+export interface LayerTrust {
+  ontology: string
+  layer: TrustLayer
+  proof: { headline: string; steps: Array<{ title: string; text: string; status: 'ok' | 'warn' | 'todo' }> }
+  people: {
+    headline: string
+    counts: Array<{ label: string; value: number }>
+    recent: Array<{ text: string; by: string | null; at: string | null }>
+    missing: Array<{ text: string; where: string }>
+  }
+}
+
 export interface KgOverview {
   ontology: { id: string; name: string; version?: number }
   schema: KgSchemaTable[]
@@ -1219,7 +1348,7 @@ export interface KgOverview {
     broken_links: number
     connected_pct: number
   }
-  things: Array<{ thing: string; entities: number; tables: string[] }>
+  things: Array<{ thing: string; entities: number; tables: string[]; icon?: string }>
   connections: KgConnectionStat[]
   graphs: Array<{
     source: string
@@ -1234,6 +1363,7 @@ export interface KgOverview {
 export interface KgHit extends KgRef {
   thing: string
   label: string | null
+  icon?: string
   /** Which field matched when it was not the id or name, e.g. "City: sao paulo". */
   matched?: string
 }
@@ -1246,6 +1376,9 @@ export interface KgSearch {
 export interface KgEntity extends KgRef {
   thing: string
   label: string | null
+  /** One plain sentence about this record, built from its own values. */
+  summary?: string
+  icon?: string
   fields: Array<{
     column: string
     label: string
@@ -1264,7 +1397,21 @@ export interface KgEntity extends KgRef {
     items: Array<KgRef & { label: string | null }>
     broken?: boolean
     value?: string | number | null
+    /** Which role the link plays ("Bill-To Customer") when there is more than one way. */
+    role?: string | null
   }>
+}
+
+/** One page of the records linked to a record through one link (drill-down). */
+export interface KgConnectionPage {
+  link: string
+  direction: 'in' | 'out'
+  thing: string
+  role: string | null
+  total: number
+  matching: number
+  offset: number
+  items: Array<KgRef & { label: string | null }>
 }
 
 export interface KgStep extends KgRef {
@@ -1292,6 +1439,8 @@ export interface CtxFact {
 }
 
 export interface CtxBuild {
+  /** Set when the question could not be answered: it is logged as a gap to fix. */
+  gap?: { reason: string; label: string; detail: string } | null
   ontology: { id: string; name: string; version?: number }
   data_as_of: string | null
   question: string
@@ -1372,6 +1521,8 @@ export interface SemCard {
   owner: string | null
   dims: Array<{ name: string; label: string; thing: string }>
   words: string | null
+  /** A people-written meaning specific to this company (differs from the usual one), if any. */
+  company_meaning?: string | null
 }
 
 export interface SemDecision {
@@ -1484,4 +1635,100 @@ export interface OntoAgentConnection {
   claude_desktop: unknown
   cursor: unknown
   curl: string
+}
+
+/* ------------------------------------------------ Report check (Context) */
+export type CheckVerdict = 'pass' | 'wrong' | 'unit' | 'no_number' | 'refused_ok' | 'should_refuse' | 'error'
+
+export interface ReportCheck {
+  id: string
+  question: string
+  phrasings: string[]
+  expected: number | null
+  row_label: string | null
+  unit: string | null
+  digits: number
+  refuse: boolean
+  source: string | null
+  created_at: string
+}
+
+export interface ReportCheckAnswer {
+  phrasing: string
+  got: number | null
+  how: string
+  verdict: CheckVerdict
+  label: string
+  certified: boolean
+  metric: string | null
+  silent: boolean
+  sql: string | null
+  ms: number
+}
+
+export interface ReportCheckSummary {
+  checks: number
+  asked: number
+  passed: number
+  accuracy_pct: number | null
+  certified: { asked: number; pct: number | null }
+  other: { asked: number; pct: number | null }
+  refusals: { asked: number; pct: number | null }
+  agreement_pct: number | null
+  silent_wrong: number
+  verdicts: Record<CheckVerdict, number>
+  seconds?: number
+}
+
+export interface ReportCheckResult {
+  id: string
+  question: string
+  expected: number | null
+  unit: string | null
+  row_label: string | null
+  refuse: boolean
+  source: string | null
+  answers: ReportCheckAnswer[]
+  passed: boolean
+  agree: boolean
+}
+
+export interface ReportCheckOverview {
+  checks: ReportCheck[]
+  last_run: { id: string; at: string; summary: ReportCheckSummary; results: ReportCheckResult[] } | null
+  history: Array<{ id: string; at: string; summary: ReportCheckSummary }>
+  verdicts: Record<CheckVerdict, string>
+}
+
+export interface ReportCheckInput {
+  question: string
+  expected?: number | string | null
+  row_label?: string | null
+  unit?: string | null
+  digits?: number | null
+  refuse?: boolean
+  phrasings?: string[]
+  source?: string | null
+}
+
+/* ------------------------------------- Questions it could not answer */
+export interface CtxGapGroup {
+  key: string
+  question: string
+  count: number
+  reason: string
+  label: string
+  detail: string
+  things: string[]
+  sources: string[]
+  first: string
+  last: string
+  fix: { action: 'note' | 'metric'; text: string; note: string }
+}
+
+export interface CtxGaps {
+  ontology: string
+  total: number
+  groups: CtxGapGroup[]
+  reasons: Record<string, string>
 }

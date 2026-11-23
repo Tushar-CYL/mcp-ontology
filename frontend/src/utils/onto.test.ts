@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { OntoField, OntoLink, OntoThing } from '../api/types'
 import {
-  CHECK, centralThing, checkedShare, conflictCount, filterFields, filterThings, flowLayout, matchLabel, sourceLine, timeAgo,
+  CHECK, centralThing, checkedShare, conflictCount, filterFields, filterThings, flowLayout, matchLabel, sourceLine, thingProof, timeAgo,
 } from './onto'
 
 function field(over: Partial<OntoField> = {}): OntoField {
@@ -26,6 +26,15 @@ describe('onto helpers', () => {
   it('reads checks the same way everywhere', () => {
     expect(CHECK.conflict.tone).toBe('rose')
     expect(CHECK.verified.label).toBe('Checked in data')
+  })
+
+  it('splits a thing into proved / data-disagrees / to-check', () => {
+    const t = thing('Order', [
+      field({ check: 'verified' }), field({ check: 'verified' }),
+      field({ check: 'conflict' }), field({ check: 'unchecked' }),
+    ])
+    expect(thingProof(t)).toEqual({ proved: 2, disagrees: 1, todo: 1 })
+    expect(thingProof(thing('Empty', []))).toEqual({ proved: 0, disagrees: 0, todo: 0 })
   })
 
   it('computes the share of fields confirmed by the data', () => {

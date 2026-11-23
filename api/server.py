@@ -85,6 +85,16 @@ DEFAULT_GUARDRAILS = [
 ]
 
 
+class RuleBody(BaseModel):
+    text: str = Field(..., max_length=500)
+    by: str | None = Field(None, max_length=120)
+
+
+class RuleDecision(BaseModel):
+    owner: str = Field("", max_length=120)
+    by: str | None = Field(None, max_length=120)
+
+
 class LoginRequest(BaseModel):
     token: str = Field(min_length=1, max_length=512)
 
@@ -659,6 +669,73 @@ def create_app(graph_path: str | Path | None = None,
         """Is each layer ready for this ontology? In plain words, per layer."""
         from api.layer_health import report
         return report(platform(request).layer, ontology)
+
+    # ---------------------------------------------------- business rules
+    def _rules(fn):
+        from ontology import business_rules as br
+        try:
+            return fn(br)
+        except br.RuleError as exc:
+            raise _error(400, "RuleError", str(exc)) from exc
+        except KeyError as exc:
+            raise _error(404, "NotFound", str(exc).strip("'\"")) from exc
+
+    def _rule_ai():
+        from api.onto_routes import ai_client
+        from ontology import meaning as mn
+        client = ai_client()
+        return None if client.mock or not mn.ai_enabled() else client
+
+    @app.get("/api/rules/{oid}")
+    def rules_list(oid: str, request: Request):
+        return _rules(lambda br: br.listing(platform(request).layer, oid))
+
+    @app.post("/api/rules/{oid}")
+    def rules_add(oid: str, body: RuleBody, request: Request):
+        return _rules(lambda br: br.add(platform(request).layer, oid, body.text, by=body.by or "you",
+                                        client=_rule_ai()))
+
+    @app.post("/api/rules/{oid}/{rid}/check")
+    def rules_check(oid: str, rid: str, request: Request):
+        return _rules(lambda br: br.check(platform(request).layer, oid, rid))
+
+    @app.post("/api/rules/{oid}/{rid}/activate")
+    def rules_activate(oid: str, rid: str, body: RuleDecision, request: Request):
+        return _rules(lambda br: br.activate(platform(request).layer, oid, rid, by=body.by or "you",
+                                             owner=body.owner))
+
+    @app.post("/api/rules/{oid}/{rid}/retire")
+    def rules_retire(oid: str, rid: str, request: Request):
+        return _rules(lambda br: br.retire(platform(request).layer, oid, rid))
+
+    @app.delete("/api/rules/{oid}/{rid}")
+    def rules_remove(oid: str, rid: str, request: Request):
+        _rules(lambda br: br.remove(platform(request).layer, oid, rid))
+        return {"removed": rid}
+
+    @app.get("/api/impact/{oid}")
+    def impact_of(oid: str, request: Request, kind: str = Query(..., max_length=20),
+                  key: str = Query(..., max_length=400)):
+        """What depends on this field, metric, thing or rule, across every layer."""
+        from ontology import impact
+        try:
+            return impact.impact(platform(request).layer, oid, kind, key)
+        except ValueError as exc:
+            raise _error(400, "BadKind", str(exc)) from exc
+        except KeyError as exc:
+            raise _error(404, "NotFound", str(exc).strip("'\"")) from exc
+
+    @app.get("/api/trust/{oid}/{which}")
+    def layer_trust(oid: str, which: str, request: Request):
+        """Why this layer can be trusted: the technical proof (what the data
+        checked) next to the business knowledge (what people added)."""
+        from api import trust
+        try:
+            return trust.layer_trust(platform(request).layer, oid, which)
+        except ValueError as exc:
+            raise _error(400, "BadLayer", str(exc)) from exc
+        except KeyError as exc:
+            raise _error(404, "NotFound", str(exc).strip("'\"")) from exc
 
     # --------------------------------------------------------- sources
     @app.get("/api/sources")

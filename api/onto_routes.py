@@ -70,11 +70,25 @@ class ThingEdit(BaseModel):
     key: str
     name: str | None = None
     description: str | None = None
+    name_field: str | None = None
     by: str = "you"
 
 
 class MetadataRequest(BaseModel):
     path: str
+
+
+class ReviewRequest(BaseModel):
+    targets: list[str] = Field(default_factory=list, max_length=500)
+    decision: Literal["approved", "rejected"]
+    thing: str | None = Field(None, max_length=200)
+    note: str = Field("", max_length=1000)
+    by: str = Field("you", max_length=120)
+
+
+class UndoRequest(BaseModel):
+    target: str = Field(..., min_length=1, max_length=500)
+    by: str = Field("you", max_length=120)
 
 
 class AskRequest(BaseModel):
@@ -196,6 +210,27 @@ def register(app, platform, error) -> None:
                                                by=body.by or "you"))
         return {**out, "ontology": full_view(layer.graph, oid)}
 
+    @app.get("/api/onto/{oid}/review")
+    def onto_review(oid: str, request: Request):
+        """Review by exception: only what the data could not settle, ranked."""
+        from ontology import review
+        return guard(lambda: review.queue(platform(request).layer.graph, oid))
+
+    @app.post("/api/onto/{oid}/review")
+    def onto_review_decide(oid: str, request: Request, body: ReviewRequest):
+        from ontology import review
+        layer = platform(request).layer
+        out = guard(lambda: review.decide(layer, oid, body.targets, body.decision,
+                                          by=body.by or "you", thing=body.thing, note=body.note))
+        return {**out, "ontology": full_view(layer.graph, oid)}
+
+    @app.post("/api/onto/{oid}/review/undo")
+    def onto_review_undo(oid: str, request: Request, body: UndoRequest):
+        from ontology import review
+        layer = platform(request).layer
+        out = guard(lambda: review.undo(layer, oid, body.target, by=body.by or "you"))
+        return {**out, "ontology": full_view(layer.graph, oid)}
+
     @app.get("/api/onto/{oid}/suggest")
     def onto_suggest(oid: str, request: Request, kind: str = "note", ai: bool = True):
         """Suggestions from this data for every layer: note (Add context),
@@ -219,8 +254,15 @@ def register(app, platform, error) -> None:
     def onto_thing(oid: str, request: Request, body: ThingEdit):
         layer = platform(request).layer
         guard(lambda: simple.edit_thing(layer, oid, body.key, by=body.by or "you",
-                                        name=body.name, description=body.description))
+                                        name=body.name, description=body.description,
+                                        name_field=body.name_field))
         return full_view(layer.graph, oid)
+
+    @app.get("/api/onto/{oid}/things/{key}/name-fields")
+    def onto_name_fields(oid: str, key: str, request: Request):
+        from ontology import look
+        layer = platform(request).layer
+        return {"candidates": guard(lambda: look.name_candidates(layer, oid, key))}
 
     @app.delete("/api/onto/{oid}")
     def onto_delete(oid: str, request: Request):

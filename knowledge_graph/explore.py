@@ -27,7 +27,7 @@ import zipfile
 from pathlib import Path
 
 from knowledge_graph.build import qi, table_ref
-from ontology import simple
+from ontology import look, simple
 
 SAMPLE = 8                 # connected entities listed per connection
 SEARCH_LIMIT = 25
@@ -105,6 +105,9 @@ def _model(layer, ontology_id: str) -> dict:
             name_col = next((c for c in names if c.lower() in ("name", "title", "full_name",
                                                                 "display_name")),
                             names[0] if names else None)
+            chosen = t.get("name_field")          # a person said which field names it
+            if chosen and chosen in cols and chosen in {f["column"] for f in fields}                     and not any(f.get("personal") for f in fields if f["column"] == chosen):
+                name_col = chosen
             sets[member] = {
                 "member": member, "thing": t["name"], "source": source, "table": table,
                 "ref": ref, "key": "+".join(key_cols) or None, "key_cols": key_cols,
@@ -188,7 +191,8 @@ def _overview(layer, ontology_id: str) -> dict:
     for s in m["sets"].values():
         n = int(g.sql(f"SELECT count(*) FROM {s['ref']}")[0][0])
         s["records"] = n
-        th = things.setdefault(s["thing"], {"thing": s["thing"], "entities": 0, "tables": []})
+        th = things.setdefault(s["thing"], {"thing": s["thing"], "entities": 0, "tables": [],
+                                            "icon": look.icon(s["thing"])})
         th["entities"] += n
         th["tables"].append(s["member"])
     connections = []
@@ -345,7 +349,7 @@ def search(layer, ontology_id: str, q: str, thing: str | None = None,
                 WHERE {' OR '.join(where)}
                 ORDER BY 4, 2 LIMIT {int(per_set)}"""):
             hit = {"set": s["member"], "thing": s["thing"], "key": key,
-                   "label": _display(s, key, label), "rank": rank}
+                   "label": _display(s, key, label), "icon": look.icon(s["thing"]), "rank": rank}
             if rank == 3 and why:
                 hit["matched"] = why
             hits.append(hit)
@@ -359,7 +363,7 @@ def search(layer, ontology_id: str, q: str, thing: str | None = None,
                 WHERE id = {exact} OR label ILIKE {pattern} ESCAPE '\\'
                 ORDER BY 4, length(label), 2 LIMIT {int(max(per_set, limit // 2))}"""):
             hits.append({"set": f"graph:{source}", "thing": typ or "Entity", "key": key,
-                         "label": label or key, "rank": rank})
+                         "label": label or key, "icon": look.icon(typ or "Entity"), "rank": rank})
     # Best matches first; within a rank, take each kind of thing in turn so
     # one big table cannot fill the list.
     by_rank: dict = {}
@@ -426,9 +430,10 @@ def entity(layer, ontology_id: str, set_name: str, key: str, sample: int = SAMPL
             items = []
             if value is not None:
                 items = _items(g, p, f"CAST({qi(link['parent_col'])} AS VARCHAR) = {_lit(value)}", 1)
+            role = _role(m, link)
             connections.append({"link": link["key"], "direction": "out",
-                                "text": f"Belongs to {link['to_thing']}",
-                                "thing": link["to_thing"], "set": link["parent"],
+                                "text": f"Belongs to {link['to_thing']}" + (f" as {role}" if role else ""),
+                                "role": role, "thing": link["to_thing"], "set": link["parent"],
                                 "count": len(items), "items": items,
                                 "broken": value is not None and not items, "value": _plain(value)})
         if link["parent"] == set_name:           # records that point at this one
@@ -438,13 +443,133 @@ def entity(layer, ontology_id: str, set_name: str, key: str, sample: int = SAMPL
                 continue
             where = f"CAST({qi(link['child_col'])} AS VARCHAR) = {_lit(value)}"
             n = int(g.sql(f"SELECT count(*) FROM {c['ref']} WHERE {where}")[0][0])
+            role = _role(m, link)
             connections.append({"link": link["key"], "direction": "in",
-                                "text": f"{link['from_thing']} records linked to it",
-                                "thing": link["from_thing"], "set": link["child"], "count": n,
-                                "items": _items(g, c, where, sample) if n else []})
-    return {"set": set_name, "thing": s["thing"], "key": key,
-            "label": _display(s, key, row.get(s["label"]) if s["label"] else None),
+                                "text": f"{link['from_thing']} records linked to it"
+                                        + (f" as {role}" if role else ""),
+                                "role": role, "thing": link["from_thing"], "set": link["child"],
+                                "count": n, "items": _items(g, c, where, sample) if n else []})
+    label = _display(s, key, row.get(s["label"]) if s["label"] else None)
+    return {"set": set_name, "thing": s["thing"], "key": key, "label": label,
+            "icon": look.icon(s["thing"]), "summary": summary(s, row, connections, label),
             "fields": fields, "connections": connections}
+
+
+# The fields a summary sentence reads, in this order: what state it is in,
+# when, how much. At most SUMMARY_FIELDS of them, then who it belongs to.
+SUMMARY_ROLES = ("category", "flag", "date", "amount", "quantity", "measure", "location")
+SUMMARY_FIELDS = 3
+SUMMARY_PARENTS = 2
+
+
+def _say(value) -> str:
+    if isinstance(value, float):
+        return f"{value:,.2f}".rstrip("0").rstrip(".")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return f"{value:,}"
+    text = str(value)
+    return text if len(text) <= 40 else text[:37] + "..."
+
+
+def summary(s: dict, row: dict, connections: list[dict], label: str) -> str:
+    """One plain sentence about one record, from its own values:
+    "Order 11 has Status paid and Net Amount 31, and belongs to Customer 12."
+    Ids, links, names and personal data are left out; a parent the data points
+    at but that does not exist is said plainly."""
+    skip = set(s["key_cols"]) | {s["label"]} | set(s["personal"])
+    skip |= {c.get("value") and c.get("link", "").split("->")[0].rsplit(".", 1)[-1]
+             for c in connections if c["direction"] == "out"}
+    facts = []
+    for role in SUMMARY_ROLES:
+        for f in s["fields"]:
+            col = f["column"]
+            if f.get("role") != role or col in skip or row.get(col) in (None, ""):
+                continue
+            facts.append(f"{f.get('label') or col} {_say(_plain(row[col]))}")
+            skip.add(col)
+            break
+        if len(facts) >= SUMMARY_FIELDS:
+            break
+    parents = []
+    for c in connections:
+        if c["direction"] != "out" or c.get("value") is None:
+            continue
+        if c["items"]:
+            parents.append(str(c["items"][0]["label"]))
+        elif c.get("broken"):
+            parents.append(f"{c['thing']} {c['value']} (not found in the data)")
+        if len(parents) >= SUMMARY_PARENTS:
+            break
+    text = str(label)
+    if facts:
+        text += " has " + (facts[0] if len(facts) == 1 else ", ".join(facts[:-1]) + " and " + facts[-1])
+    if parents:
+        text += (", and" if facts else "") + " belongs to " + " and ".join(parents)
+    if not facts and not parents:
+        text += f" is one {s['thing']}"
+    return text + "."
+
+
+def _role(m: dict, link: dict) -> str | None:
+    """Which role a link plays, named by its field ("Bill-To Customer"), when a
+    thing links to the same other thing more than one way (sold-to, ship-to,
+    bill-to, payer) or the field says more than the thing's name."""
+    child = m["sets"].get(link["child"]) or {}
+    label = next((f.get("label") for f in child.get("fields") or []
+                  if f.get("column") == link["child_col"]), None) or link["child_col"]
+    same = [lk for lk in m["links"] if lk["child"] == link["child"] and lk["parent"] == link["parent"]]
+    if len(same) > 1:
+        return label
+    words = set(re.findall(r"[a-z]+", str(label).lower())) - {"id", "key", "code", "no", "number"}
+    thing = set(re.findall(r"[a-z]+", str(link["to_thing"]).lower()))
+    return label if words - thing else None
+
+
+def connection(layer, ontology_id: str, set_name: str, key: str, link_key: str,
+               offset: int = 0, limit: int = 50, q: str = "") -> dict:
+    """One page of the records linked to a record through one link (drill
+    down: an order's lines, a customer's orders as payer), optionally
+    narrowed by a word in their name or id."""
+    m = model(layer, ontology_id)
+    s = m["sets"].get(set_name)
+    link = next((lk for lk in m["links"] if lk["key"] == link_key), None)
+    if s is None or not s["key"]:
+        raise GraphError(f"{set_name} is not part of this ontology")
+    if link is None or set_name not in (link["parent"], link["child"]):
+        raise GraphError(f"{link_key} is not a link of {s['thing']}")
+    limit = max(1, min(int(limit), 200))
+    offset = max(0, int(offset))
+    g = layer.graph
+    cols, rows = g.query_with_columns(f"SELECT * FROM {s['ref']} WHERE {_k(s)} = {_lit(key)} LIMIT 1")
+    if not rows:
+        raise GraphError(f"no {s['thing']} with id {key}")
+    rec = dict(zip(cols, rows[0]))
+    if link["parent"] == set_name:
+        other = m["sets"][link["child"]]
+        value = rec.get(link["parent_col"])
+        where = f"CAST({qi(link['child_col'])} AS VARCHAR) = {_lit(value)}"
+        direction = "in"
+    else:
+        other = m["sets"][link["parent"]]
+        value = rec.get(link["child_col"])
+        where = f"CAST({qi(link['parent_col'])} AS VARCHAR) = {_lit(value)}"
+        direction = "out"
+    if value is None:
+        return {"link": link_key, "direction": direction, "thing": other["thing"], "role": _role(m, link),
+                "total": 0, "matching": 0, "offset": offset, "items": []}
+    total = int(g.sql(f"SELECT count(*) FROM {other['ref']} WHERE {where}")[0][0])
+    narrowed = where
+    q = str(q or "").strip()[:100]
+    if q:
+        narrowed += (f" AND (CAST({_k(other)} AS VARCHAR) ILIKE {_lit('%' + q + '%')}"
+                     + (f" OR CAST({qi(other['label'])} AS VARCHAR) ILIKE {_lit('%' + q + '%')}"
+                        if other["label"] else "") + ")")
+    matching = int(g.sql(f"SELECT count(*) FROM {other['ref']} WHERE {narrowed}")[0][0]) if q else total
+    items = [{"set": other["member"], "key": k, "label": _display(other, k, lbl)}
+             for k, lbl in g.sql(f"SELECT {_k(other)}, {_lbl(other)} FROM {other['ref']}"
+                                 f" WHERE {narrowed} ORDER BY 1 LIMIT {limit} OFFSET {offset}")]
+    return {"link": link_key, "direction": direction, "thing": other["thing"], "role": _role(m, link),
+            "total": total, "matching": matching, "offset": offset, "items": items}
 
 
 def _plain(value):
@@ -935,6 +1060,57 @@ def sample(layer, ontology_id: str, seeds: int = SAMPLE_SEEDS,
                 LIMIT {int(seeds)}"""):
             _around(g, m, f"graph:{source}", key, per_seed, nodes, edges)
     return {"nodes": list(nodes.values()), "edges": list(edges.values())}
+
+
+GLOBE_BUDGET = 320        # records in the globe picture (readable, and quick to lay out)
+GLOBE_PER_SEED = 4        # neighbours drawn per starting record in the globe
+
+
+def globe(layer, ontology_id: str, budget: int = GLOBE_BUDGET,
+          per_seed: int = GLOBE_PER_SEED) -> dict:
+    """The whole graph at a glance: real records from every kind of thing
+    (each kind is drawn as its own globe), joined by their real links.
+
+    Every kind of thing gets a record first, so no globe is missing; then
+    the rounds add records and their neighbours, kind by kind, until the
+    budget is used. The same picture every time (records in key order)."""
+    m = model(layer, ontology_id)
+    g = layer.graph
+    budget = max(1, int(budget))
+    nodes: dict = {}
+    edges: dict = {}
+    keyed = sorted((x for x in m["sets"].values() if x["key"]), key=lambda x: x["member"])
+    starts = [(x["member"], f"SELECT {_k(x)} FROM {x['ref']} WHERE {_k(x)} IS NOT NULL ORDER BY 1")
+              for x in keyed]
+    starts += [(f"graph:{source}", f"SELECT h FROM ({q['triples']}) GROUP BY h ORDER BY count(*) DESC, h")
+               for source, q in m["graphs"].items()]
+    rounds = max(1, budget // max(1, len(starts)) // (1 + per_seed))
+    seeds = {member: [str(k) for (k,) in g.sql(f"{sql} LIMIT {rounds}")] for member, sql in starts}
+    for member, _sql in starts:                    # one globe for every kind of thing
+        if seeds[member] and len(nodes) < budget:
+            nodes.setdefault(f"{member}|{seeds[member][0]}", _node(m, g, member, seeds[member][0]))
+    for r in range(rounds):
+        for member, _sql in starts:
+            if r >= len(seeds[member]):
+                continue
+            key = seeds[member][r]
+            room = budget - len(nodes) - (f"{member}|{key}" not in nodes)
+            if room < 0:
+                continue
+            _around(g, m, member, key, min(per_seed, room), nodes, edges)
+    degree: dict = {}
+    for e in edges.values():
+        for end in (e["source"], e["target"]):
+            degree[end] = degree.get(end, 0) + 1
+    for n in nodes.values():
+        n["degree"] = degree.get(n["id"], 0)
+    totals = {t["thing"]: t["entities"] for t in overview(layer, ontology_id)["things"]}
+    shown: dict = {}
+    for n in nodes.values():
+        shown[n["thing"]] = shown.get(n["thing"], 0) + 1
+    things = [{"thing": t, "records": totals.get(t, c), "shown": c}
+              for t, c in sorted(shown.items(), key=lambda kv: (-totals.get(kv[0], kv[1]), kv[0]))]
+    return {"nodes": list(nodes.values()), "edges": list(edges.values()), "things": things}
 
 
 def expand(layer, ontology_id: str, set_name: str, key: str, limit: int = EXPAND_LIMIT) -> dict:

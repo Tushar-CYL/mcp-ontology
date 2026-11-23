@@ -2,13 +2,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowRight, ChevronDown, CircleCheck, MessageSquareWarning, Plus, SearchX, Sparkles, TriangleAlert } from 'lucide-react'
 import { api, describeError } from '../../api/client'
-import type { CtxBuild, CtxChart } from '../../api/types'
+import type { CtxBuild, CtxChart, CtxFact } from '../../api/types'
+import { ProofMark, type Proof } from '../../components/ProofMark'
+import { EvidenceDrawer, type Evidence } from '../../components/EvidenceDrawer'
 import { Button } from '../../components/Button'
 import { EChart } from '../../components/EChart'
 import { EmptyState } from '../../components/EmptyState'
 import { ErrorState } from '../../components/ErrorState'
 import { LoadingState } from '../../components/LoadingState'
 import { PageHeader } from '../../components/PageHeader'
+import { Disclose } from '../../components/Disclose'
 import { UseElsewhere } from '../../components/UseElsewhere'
 import { SuggestionChips } from '../../components/SuggestionChips'
 import { useToast } from '../../context/ToastContext'
@@ -17,6 +20,7 @@ import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { useSuggestions } from '../../hooks/useSuggestions'
 import { cx } from '../../utils/cx'
 import { chartOption, compact, headline, shapeOf } from './charts'
+import { Gaps } from './Gaps'
 
 /**
  * Context, picture first: the data at a glance as charts, a question picked
@@ -80,6 +84,7 @@ function Workspace({ oid, name, choices, onSwitch }: {
   const [busy, setBusy] = useState(false)
   const [out, setOut] = useState<CtxBuild | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [asked, setAsked] = useState(0)
 
   const ask = async (q = question) => {
     const text = q.trim()
@@ -88,7 +93,9 @@ function Workspace({ oid, name, choices, onSwitch }: {
     setBusy(true)
     setError(null)
     try {
-      setOut(await api.ctxBuild(oid, text))
+      const built = await api.ctxBuild(oid, text)
+      setOut(built)
+      if (built.gap) setAsked((n) => n + 1)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) {
       const msg = describeError(e).message
@@ -110,6 +117,7 @@ function Workspace({ oid, name, choices, onSwitch }: {
           </select>
         ) : null} />
 
+
       <form className="cx-ask" onSubmit={(e) => { e.preventDefault(); void ask() }}>
         <Sparkles size={18} aria-hidden="true" />
         <input value={question} aria-label="Question" maxLength={1000}
@@ -123,6 +131,9 @@ function Workspace({ oid, name, choices, onSwitch }: {
       {error ? <p className="kgb__error"><TriangleAlert size={15} aria-hidden="true" /> {error}</p> : null}
 
       {out ? <AnswerPanel oid={oid} out={out} onClose={() => setOut(null)} /> : null}
+      {out?.gap ? (
+        <p className="cx-gapnote"><TriangleAlert size={14} aria-hidden="true" /> Logged under “Questions it could not answer” below: {out.gap.label.toLowerCase()}.</p>
+      ) : null}
 
       {glance.initialLoading && !glance.data ? <LoadingState label="Reading your data" /> : null}
       {glance.error && !glance.data ? <ErrorState error={glance.error} onRetry={glance.reload} /> : null}
@@ -142,6 +153,13 @@ function Workspace({ oid, name, choices, onSwitch }: {
           </section>
         </>
       ) : null}
+
+      <section className="cx-proof" aria-label="Gaps">
+        <Disclose summary="Questions it could not answer"
+          note={asked ? `${asked} logged` : 'None logged yet'}>
+          <Gaps oid={oid} refresh={asked} />
+        </Disclose>
+      </section>
 
       <UseElsewhere layer="context" oid={oid} />
     </div>
@@ -176,6 +194,7 @@ const VERDICT: Record<CtxBuild['steps']['answer']['status'], string> = {
 
 function AnswerPanel({ oid, out, onClose }: { oid: string; out: CtxBuild; onClose: () => void }) {
   const s = out.steps
+  const [ev, setEv] = useState<Evidence | null>(null)
   const table = s.facts.table
   const shape = table ? shapeOf(table.columns, table.rows) : null
   // A record question has no table: show what the record is connected to,
@@ -202,6 +221,7 @@ function AnswerPanel({ oid, out, onClose }: { oid: string; out: CtxBuild; onClos
     ...s.understand.fields.slice(0, 3).map((f) => f.label),
   ]
   const followed = s.follow.in_scope
+  const leftOut = s.facts.quarantined.length + (s.answer.unsupported_numbers?.length ?? 0)
 
   return (
     <section className={cx('cx-answer', `is-${s.answer.status}`)} aria-label="Answer">
@@ -209,6 +229,13 @@ function AnswerPanel({ oid, out, onClose }: { oid: string; out: CtxBuild; onClos
         <p className="cx-answer__q">{out.question}</p>
         <button type="button" className="cx-answer__close" onClick={onClose} aria-label="Close the answer">×</button>
       </div>
+
+      {understood.length ? (
+        <div className="answercard__read" aria-label="How the question was read">
+          <span className="kg-muted">I read it as</span>
+          {understood.slice(0, 5).map((u, i) => <span key={`${u}-${i}`} className="readchip">{u}</span>)}
+        </div>
+      ) : null}
 
       {shape?.kind === 'number' ? (
         <div className="cx-hero">
@@ -228,6 +255,22 @@ function AnswerPanel({ oid, out, onClose }: { oid: string; out: CtxBuild; onClos
           height={shape && shape.kind === 'bar' && shape.horizontal ? Math.max(220, shape.x.length * 26) : 260} />
       ) : null}
       {reach && reach.length ? <p className="kg-muted">Records linked to {s.follow.walks[0].from.label}</p> : null}
+
+      {s.facts.kept.length ? (
+        <div className="answercard__facts" aria-label="The facts behind this answer">
+          {s.facts.kept.slice(0, 6).map((f, i) => (
+            <button key={`${f.citation ?? f.text}-${i}`} type="button" className="factchip"
+              onClick={() => setEv(factEvidence(out.question, f))}>
+              <span>{f.text}</span>
+              <ProofMark kind={factProof(f.kind)} size="sm" />
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {leftOut ? (
+        <p className="answercard__left-out"><TriangleAlert size={14} aria-hidden="true" />
+          I left out {leftOut === 1 ? '1 thing' : `${leftOut} things`} I could not prove.</p>
+      ) : null}
 
       <div className="cx-trail" aria-label="How this answer was built">
         <span className={cx('cx-badge', s.answer.status === 'answered' ? 'is-ok' : 'is-warn')}>
@@ -251,8 +294,25 @@ function AnswerPanel({ oid, out, onClose }: { oid: string; out: CtxBuild; onClos
         <p className="kg-muted">Ontology version {out.ontology.version ?? '-'}{out.data_as_of ? ` · data as of ${out.data_as_of.slice(0, 16).replace('T', ' ')}` : ''}</p>
         <Feedback oid={oid} question={out.question} />
       </details>
+
+      <p className="answercard__scope">I can show the facts and rules I used, not how the AI chose its words.</p>
+      <EvidenceDrawer evidence={ev} onClose={() => setEv(null)} />
     </section>
   )
+}
+
+// Which proof mark a context fact carries, from the kind of fact it is.
+const FACT_PROOF: Record<string, Proof> = {
+  count: 'proved', number: 'proved', check: 'proved', record: 'proved',
+  link: 'proved', meaning: 'proved', rule: 'rule', note: 'person',
+}
+const factProof = (kind: string): Proof => FACT_PROOF[kind] ?? 'guess'
+
+function factEvidence(question: string, f: CtxFact): Evidence {
+  const rows: Array<{ k: string; v: string }> = [{ k: 'Where it came from', v: f.source }]
+  if (f.citation) rows.push({ k: 'Reference', v: f.citation })
+  if (f.reason) rows.push({ k: 'Why it was used', v: f.reason })
+  return { title: question, proof: factProof(f.kind), statement: f.text, rows }
 }
 
 function Feedback({ oid, question }: { oid: string; question: string }) {

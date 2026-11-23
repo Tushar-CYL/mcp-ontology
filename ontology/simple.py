@@ -601,6 +601,7 @@ def _view(graph, ontology_id: str, version: int | None, published: bool) -> dict
             thing_of_table[t] = name
         things.append({"key": item["key"], "name": name,
                        "description": m.get("description") or c.get("description") or "",
+                       "name_field": m.get("name_field"), "icon": _icon(name),
                        "by": m.get("by", "engine"), "tables": c.get("members", []),
                        "records": sum(profiles.get(t, {}).get("rows", 0)
                                       for t in c.get("members", [])) or int(m.get("records") or 0),
@@ -609,6 +610,8 @@ def _view(graph, ontology_id: str, version: int | None, published: bool) -> dict
     concept_of = {}
     for i in items("member"):
         concept_of[i["payload"]["table"]] = i["payload"]["concept"]
+    from ontology import review as rv
+    reviewed = rv.decisions(meanings)
     counts = {"verified": 0, "conflict": 0, "unchecked": 0}
     by_count: dict = {}
     order = {"identifier": 0, "reference": 1, "name": 2}
@@ -627,6 +630,9 @@ def _view(graph, ontology_id: str, version: int | None, published: bool) -> dict
         if field["links_to"] and str(field.get("proof") or "").startswith("values match"):
             # Name the target the way the screen does, not by its raw table.
             field["proof"] = f"values match {field['links_to']} in the data"
+        target = rv.field_target(field)
+        field["review"] = rv.status(field, rv.field_claim(field), reviewed.get(target))
+        field["spot_check"] = False
         thing["fields"].append(field)
         counts[m.get("check", "unchecked")] = counts.get(m.get("check", "unchecked"), 0) + 1
         by_count[m.get("by")] = by_count.get(m.get("by"), 0) + 1
@@ -650,6 +656,16 @@ def _view(graph, ontology_id: str, version: int | None, published: bool) -> dict
                                                   else "unchecked" if p.get("matched") is None
                                                   else "conflict"),
                       "proof": item["evidence"][:3]})
+    rejected_links = []
+    for link in list(links):
+        target = rv.link_target(link)
+        link["review"] = rv.status({"check": link["check"]}, rv.link_claim(link), reviewed.get(target))
+        link["spot_check"] = False
+        if link["review"] == "rejected":
+            # A person said no: the link stops joining records everywhere
+            # (graph, metrics, context, agents) and is listed on its own.
+            links.remove(link)
+            rejected_links.append(link)
     links.sort(key=lambda link: (-(link["triples"] or 0), link["label"]))
     hierarchies = [{"thing": by_key.get(i["payload"]["concept"], {}).get("name")
                     or i["payload"]["concept"], "levels": i["payload"]["levels"],
@@ -680,7 +696,7 @@ def _view(graph, ontology_id: str, version: int | None, published: bool) -> dict
     if published or version is not None:
         versions = [x for x in versions if x["version"] <= snap["version"]]
     last = meanings.get("build:last", {})
-    return {
+    out = {
         "id": onto["id"], "name": onto["name"], "domain": onto["domain"],
         "problem": onto["problem"], "created_at": onto["created_at"],
         "sources": [s["source_id"] for s in onto["sources"]],
@@ -695,9 +711,12 @@ def _view(graph, ontology_id: str, version: int | None, published: bool) -> dict
                     # ontology the data itself confirmed (not the AI's word).
                     "confirmed_pct": confirmed_pct(counts)},
         "things": sorted(things, key=lambda t: t["name"].lower()),
-        "links": links, "hierarchies": hierarchies, "calculations": calculations,
-        "notes": notes, "findings": findings,
+        "links": links, "rejected_links": rejected_links, "hierarchies": hierarchies,
+        "calculations": calculations, "notes": notes, "findings": findings,
     }
+    rv.mark_spots(out, reviewed)
+    out["summary"]["review"] = rv.counts(out)
+    return out
 
 
 # ---------------------------------------------------------------- context
@@ -731,14 +750,32 @@ def edit_thing(layer, ontology_id: str, concept: str, by: str = "you", **changes
     if item is None:
         raise KeyError(f"no thing {concept!r} in ontology {ontology_id!r}")
     allowed = {k: str(v).strip() for k, v in changes.items()
-               if k in ("name", "description") and v}
+               if k in ("name", "description", "name_field") and v}
     if not allowed:
-        raise ValueError("nothing to change: give name or description")
+        raise ValueError("nothing to change: give name, description or name_field")
+    if "name_field" in allowed:
+        _check_name_field(graph, ontology_id, concept, allowed["name_field"])
     payload = {**item["payload"], **allowed, "by": "you", "edited": _now(), "editor": by}
     reg.put(graph, ontology_id, "meaning", f"thing:{concept}", payload, fact=True,
             confidence=1.0, evidence=[f"set by {by}"])
     _republish(layer, ontology_id, f"{by} renamed {concept}")
     return payload
+
+
+def _icon(name: str) -> str:
+    from ontology import look
+    return look.icon(name)
+
+
+def _check_name_field(graph, ontology_id: str, concept: str, column: str) -> None:
+    """The readable-name field must be one of this thing's own fields and not
+    personal data (a name shown on every page must be safe to show)."""
+    thing = next((t for t in view(graph, ontology_id)["things"] if t["key"] == concept), None)
+    field = next((f for f in (thing or {}).get("fields", []) if f["column"] == column), None)
+    if field is None:
+        raise ValueError(f"{column!r} is not a field of {thing['name'] if thing else concept}")
+    if field.get("personal"):
+        raise ValueError(f"{column!r} holds personal data ({field['personal']}): it cannot be the name")
 
 
 def _catalog(graph, ontology_id: str) -> dict:

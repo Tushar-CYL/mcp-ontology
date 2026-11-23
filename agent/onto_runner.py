@@ -128,6 +128,8 @@ def _investigator(layer, oid, agent, q, started):
             if c.get("broken"):
                 links.append(_fact(f"points at {c['thing']} {c.get('value')}, which does not exist",
                                    "data check", c["link"]))
+            elif c["direction"] == "in" and not c["count"]:
+                continue                                    # nothing linked here: say nothing
             elif c["direction"] == "in":
                 names = ", ".join(str(i["label"]) for i in c["items"][:5])
                 links.append(_fact(f"{c['count']} {c['thing'] or c['text']}: {names}"
@@ -157,6 +159,20 @@ def _investigator(layer, oid, agent, q, started):
                                         for h in found[:10]],
                     facts=[_fact(f"{v['records']:,} records have {v['label']} = {v['value']}", "from the data",
                                  f"{v['set']}.{v['column']}")], started=started)
+    # A code in the question ("Incoterms DDP", "Plant 0001"): records holding it.
+    for tok in re.findall(r"\b[A-Z0-9][A-Z0-9_-]{1,}\b", q):
+        found = [h for h in kg.search(layer, oid, tok, limit=10)["results"]
+                 if (not allowed or h["thing"] in allowed) and h.get("matched")]
+        if found:
+            return _env(agent, q, f"Records with {found[0]['matched']}:",
+                        "Some of them: " + ", ".join(
+                            str(h["label"]) if str(h["label"]).lower().startswith(h["thing"].lower())
+                            else f"{h['thing']} {h['label']}" for h in found[:10])
+                        + ". Click one, or ask \"Tell me about ...\" for everything it is linked to.",
+                        used=used, records=[{"set": h["set"], "key": h["key"], "thing": h["thing"],
+                                             "label": h["label"]} for h in found[:10]],
+                        facts=[_fact(f"{h['thing']} {h['label']}: {h['matched']}", "from the data",
+                                     f"{h['set']} [{h['key']}]") for h in found[:10]], started=started)
     example = next((t for t in view["things"] if t["name"] in (allowed or {t["name"]})), None)
     return _no(agent, q, "name a record by its id or name, e.g. \"Tell me about "
                          f"{example['name'] if example else 'Order'} <id>\"", started, used=used)
@@ -201,16 +217,24 @@ def _metric_answer(layer, oid, agent, q, started, used_extra=None):
                    started, nearest=certified[0]["title"] if certified else None, used=used)
     run = sem.value(layer, oid, hit["metric"], by=hit["by"], filters=hit["filters"] or None)
     rec = sem.receipt(layer, oid, hit["metric"])
-    cols = run["columns"]
     rows = run["rows"]
+    meta = sem._meta(layer.graph, oid, hit["metric"])
+    labels = {d["name"]: d["label"] for d in meta.get("dims") or []}
+    cols = [labels.get(c, c) for c in run["columns"]]
+    if hit["title"].startswith("Number of"):
+        rows = [[int(x) if isinstance(x, float) and x.is_integer() else x for x in r] for r in rows]
     if hit["by"]:
         top = rows[0] if rows else None
         total = sum(r[-1] or 0 for r in rows)
+        n = (lambda v: f"{v:,}" if isinstance(v, int) else f"{v:,.2f}")
         text = (f"{hit['title']} by {cols[0]}: {len(rows)} groups. The largest is {top[0]} with "
-                f"{top[-1]:,.2f}" + (f" ({top[-1] / total:.0%} of {total:,.2f})." if total else ".")) if top else "No rows."
+                f"{n(top[-1])}" + (f" ({top[-1] / total:.0%} of {n(total)})." if total else ".")) if top else "No rows."
     else:
         val = rows[0][0] if rows else None
-        text = f"{hit['title']} is {val:,.2f}." if isinstance(val, (int, float)) else f"{hit['title']}: {val}."
+        if isinstance(val, float) and val.is_integer() and hit["title"].startswith("Number of"):
+            val = int(val)
+        text = (f"{hit['title']} is {val:,}." if isinstance(val, int) else
+                f"{hit['title']} is {val:,.2f}." if isinstance(val, float) else f"{hit['title']}: {val}.")
     if hit["filters"]:
         text += " Filtered to " + "; ".join(f"{k} = {v}" for k, v in hit["filters"].items()) + "."
     facts = [_fact(f"Formula: {rec.get('formula') or rec.get('words', '')}", "semantic", f"metric:{hit['metric']}")]
@@ -238,18 +262,29 @@ def _insight(layer, oid, agent, q, started, client):
     linked = ctx.link(layer, oid, q, view)
     # A certified metric answers first (one definition everywhere); then a
     # counting question Strata can write itself; only then the AI's query.
-    if not sem.match(layer, oid, q, linked):
+    hit = sem.match(layer, oid, q, linked)
+    # A certified metric answers first - unless the question asks for a split
+    # the metric cannot give ("which Plant has the most ..."): then Strata's
+    # own query, over the same proven links, gives the breakdown.
+    wants_split = bool(quick_numbers.GROUP.search(q) or quick_numbers.MOST.search(q)
+                       or quick_numbers.MONTH.search(q))
+    own = None
+    if not hit or (hit["by"] is None and wants_split) or not hit["filters"]:
         own = quick_numbers.compute(layer, oid, q, linked, view, allowed)
-        if own is not None:
-            support = ctx.build(layer, oid, q, client=None)["steps"]["facts"]["kept"][:4]
-            facts = [_fact(f"Computed: {own['text']}", own["how"], "sql:strata")]
-            facts += [_fact(x["text"], x["source"], x["citation"]) for x in support]
-            return _env(agent, q, own["text"].split(": ")[0] + ".", own["text"],
-                        reason="computed from the data by Strata's own query",
-                        used=[{"layer": "ontology", "what": own["how"]},
-                              {"layer": "context", "what": "supporting facts"}],
-                        facts=facts, table={"columns": own["columns"], "rows": own["rows"]},
-                        sql=own["sql"], started=started)
+        # With a certified metric matching, Strata's own query is used only
+        # for what the metric cannot do: a split, or a value to filter on.
+        if own is not None and hit and not quick_numbers.adds_to(hit, own, wants_split):
+            own = None
+    if own is not None:
+        support = ctx.build(layer, oid, q, client=None)["steps"]["facts"]["kept"][:4]
+        facts = [_fact(f"Computed: {own['text']}", own["how"], "sql:strata")]
+        facts += [_fact(x["text"], x["source"], x["citation"]) for x in support]
+        return _env(agent, q, own["text"].split(": ")[0] + ".", own["text"],
+                    reason="computed from the data by Strata's own query",
+                    used=[{"layer": "ontology", "what": own["how"]},
+                          {"layer": "context", "what": "supporting facts"}],
+                    facts=facts, table={"columns": own["columns"], "rows": own["rows"]},
+                    sql=own["sql"], started=started)
     out = ctx.build(layer, oid, q, client=client, instructions=agent.get("instructions") or "")
     under = out["steps"]["understand"]
     named = [t["name"] for t in under.get("things") or [] if t.get("why") != "joins the others"]
@@ -413,7 +448,19 @@ def _privacy(layer, oid, agent, q, started):
 
 
 def run(layer, agent: dict, question: str, client=None) -> dict:
-    """Answer one question as this agent."""
+    """Answer one question as this agent. A question it cannot answer (not
+    one outside its scope by design) is logged as a gap to fix."""
+    out = _run(layer, agent, question, client)
+    said = out.get("answerable") or {}
+    reason = str(said.get("reason") or "")
+    if said.get("verdict") == "no" and not re.search(r"this agent covers|outside this agent", reason):
+        from context import gaps
+        gaps.log(layer.graph, agent["ontology"], out["question"], "agent_refused", reason,
+                 source=f"agent:{agent['name']}")
+    return out
+
+
+def _run(layer, agent: dict, question: str, client=None) -> dict:
     started = time.perf_counter()
     q = str(question or "").strip()
     if not q:

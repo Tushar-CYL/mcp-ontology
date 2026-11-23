@@ -225,6 +225,8 @@ def test_the_value_filter_is_passed_to_the_query_writer(shop, monkeypatch):
         seen["things"] = things
         return {"rows": [[42]], "columns": ["orders"], "sql": "SELECT 42"}
     monkeypatch.setattr(ctx.ask, "ask", fake_ask)
+    from agent import quick_numbers
+    monkeypatch.setattr(quick_numbers, "compute", lambda *a, **k: None)   # the AI path
     ctx.build(layer, oid, "How many orders from customers in GB?", client=Writer("42 orders [1]."))
     assert "Filter:" in seen["q"] and "country = 'GB'" in seen["q"]
     assert "Customer" in seen["things"]                      # scope passed, not re-guessed
@@ -276,6 +278,28 @@ def test_the_computed_fact_says_its_filter(shop, monkeypatch):
     layer, oid = shop
     monkeypatch.setattr(ctx.ask, "ask", lambda *a, **k: {
         "rows": [[100]], "columns": ["orders"], "sql": "SELECT 100", "things": ["Order", "Customer"]})
+    from agent import quick_numbers
+    monkeypatch.setattr(quick_numbers, "compute", lambda *a, **k: None)   # the AI path
     out = ctx.build(layer, oid, "How many orders from customers in GB?", client=Writer("100 orders [1]."))
     fact = next(f["text"] for f in out["steps"]["facts"]["kept"] if f["text"].startswith("Computed"))
     assert "filtered to Country = GB" in fact and "Order, Customer" in fact
+
+
+def test_a_counting_question_is_answered_by_strata_without_ai_sql(shop):
+    """One engine: Context counts the way the agents do - Strata's own query
+    over proven links, before any AI-written SQL. It counts the thing named
+    after 'how many' (orders), filtered by the customer's country."""
+    layer, oid = shop
+    out = ctx.build(layer, oid, "How many orders from customers in GB?")
+    f = out["steps"]["facts"]
+    assert f["table"]["rows"] == [[495]], f["table"]
+    fact = next(x["text"] for x in f["kept"] if x["citation"] == "sql:strata")
+    assert "Order" in fact and "GB" in fact
+
+
+def test_a_two_letter_code_filters_only_when_written_as_a_code(shop):
+    """Live on SALT: 'How many customers in DE?' ignored DE (values under 3
+    characters were skipped) and gave every customer. Found by the report check."""
+    layer, oid = shop
+    f = ctx.build(layer, oid, "How many customers in GB?")["steps"]["facts"]
+    assert f["table"]["rows"] == [[100]], f["table"]

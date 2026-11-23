@@ -107,6 +107,17 @@ def _a_key(layer, oid: str, thing: str) -> str | None:
         s = next((s for s in m["sets"].values() if s["thing"] == thing and s["key"]), None)
         if not s:
             return None
+        # A record other records point at, so the example has something to show.
+        for link in m["links"]:
+            if link["parent"] != s["member"]:
+                continue
+            c = m["sets"][link["child"]]
+            row = layer.graph.sql(
+                f"SELECT {kg._k(s, 'p')} FROM {s['ref']} p "
+                f"JOIN {c['ref']} c ON CAST(c.{kg.qi(link['child_col'])} AS VARCHAR) = "
+                f"CAST(p.{kg.qi(link['parent_col'])} AS VARCHAR) LIMIT 1")
+            if row:
+                return str(row[0][0])
         row = layer.graph.sql(f"SELECT {kg._k(s)} FROM {s['ref']} WHERE {kg._k(s)} IS NOT NULL LIMIT 1")
         return str(row[0][0]) if row else None
     except Exception:                              # noqa: BLE001 - an example, not a feature

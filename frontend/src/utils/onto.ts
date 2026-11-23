@@ -61,6 +61,18 @@ export function conflictCount(thing: OntoThing): number {
   return thing.fields.filter((f) => f.check === 'conflict').length
 }
 
+/** Per-thing proof split: fields proved by the data, fields the data disagrees
+ *  with, and fields not checked yet. Drives the thing's trust bar. */
+export function thingProof(thing: OntoThing): { proved: number; disagrees: number; todo: number } {
+  let proved = 0, disagrees = 0, todo = 0
+  for (const f of thing.fields) {
+    if (f.check === 'verified') proved += 1
+    else if (f.check === 'conflict') disagrees += 1
+    else todo += 1
+  }
+  return { proved, disagrees, todo }
+}
+
 export function formatCount(n: number): string {
   return n.toLocaleString('en-US')
 }
