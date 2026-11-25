@@ -9,7 +9,7 @@ import { cx } from '../utils/cx'
 const WHERE: Record<string, { label: string; path?: (oid: string) => string }> = {
   review: { label: 'Ontology review', path: (oid) => `/tools/ontology/${encodeURIComponent(oid)}` },
   notes: { label: 'Add context on the Ontology page', path: (oid) => `/tools/ontology/${encodeURIComponent(oid)}` },
-  rules: { label: 'Business rules on the Ontology page', path: (oid) => `/tools/ontology/${encodeURIComponent(oid)}?tab=rules` },
+  rules: { label: 'Business rules in Ontology Ask', path: (oid) => `/tools/ontology/${encodeURIComponent(oid)}?tab=ask` },
   graph: { label: 'Knowledge graph' },
   semantic: { label: 'Semantic page', path: (oid) => `/tools/semantic/${encodeURIComponent(oid)}` },
   report_check: { label: 'Report check on the Context page', path: (oid) => `/tools/context/${encodeURIComponent(oid)}` },

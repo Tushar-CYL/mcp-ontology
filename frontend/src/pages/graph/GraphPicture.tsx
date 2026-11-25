@@ -2,15 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Background, Controls, Position, ReactFlow, type Edge, type Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import dagre from '@dagrejs/dagre'
-import { ChevronDown, ChevronRight, Globe2, Lock, Network, Plus, Route, Workflow, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Globe2, Lock, Plus, Route, Share2, Workflow, X } from 'lucide-react'
 import { api, describeError } from '../../api/client'
-import type { KgConnectionPage, KgEntity, KgGlobe, KgPath, KgPicture } from '../../api/types'
+import type { KgConnectionPage, KgEntity, KgGlobe, KgOverview, KgPath, KgPicture } from '../../api/types'
 import { Button } from '../../components/Button'
 import { LoadingState } from '../../components/LoadingState'
 import { useAsync } from '../../hooks/useAsync'
 import { EntityPicker } from './EntityPicker'
+import { ExploreCanvas } from './ExploreGraph'
 import { GlobeGraph } from './GlobeGraph'
-import type { GlobeMode } from './globeLayout'
 
 type GNode = KgPicture['nodes'][number]
 type GEdge = KgPicture['edges'][number]
@@ -68,14 +68,14 @@ function layout(nodes: GNode[], edges: GEdge[]): Map<string, { x: number; y: num
 }
 
 /** The knowledge graph as a picture of real records. Click to see one; expand to grow. */
-type View = GlobeMode | 'flow'
+type View = 'globes' | 'flow' | 'explore'
 const VIEWS: Array<{ id: View; label: string; icon: typeof Globe2; hint: string }> = [
   { id: 'globes', label: 'Globes', icon: Globe2, hint: 'One globe per kind of thing, its records inside' },
-  { id: 'web', label: 'Web', icon: Network, hint: 'Linked records pulled together' },
   { id: 'flow', label: 'Record by record', icon: Workflow, hint: 'A few records, their links left to right' },
+  { id: 'explore', label: 'Connections', icon: Share2, hint: 'Business terms or source tables as linked bubbles' },
 ]
 
-export function GraphPicture({ oid }: { oid: string }) {
+export function GraphPicture({ oid, overview }: { oid: string; overview?: KgOverview | null }) {
   const [view, setView] = useState<View>('globes')
   const globe = useAsync<KgGlobe>((signal) => api.kgGlobe(oid, signal), [oid])
   const first = useAsync((signal) => api.kgSample(oid, signal), [oid])
@@ -83,7 +83,8 @@ export function GraphPicture({ oid }: { oid: string }) {
   const [gEdges, setGEdges] = useState<GEdge[]>([])
   const [fNodes, setFNodes] = useState<GNode[]>([])
   const [fEdges, setFEdges] = useState<GEdge[]>([])
-  const isGlobe = view !== 'flow'
+  const isExplore = view === 'explore'
+  const isGlobe = view === 'globes'
   const nodes = isGlobe ? gNodes : fNodes
   const edges = isGlobe ? gEdges : fEdges
   const setNodes = isGlobe ? setGNodes : setFNodes
@@ -139,72 +140,104 @@ export function GraphPicture({ oid }: { oid: string }) {
         data: { label: n.label ?? n.key }, draggable: true,
         sourcePosition: Position.Right, targetPosition: Position.Left,   // lines run left to right
         className: `kgp-node${selected?.id === n.id ? ' is-selected' : ''}`,
-        style: { borderLeft: `6px solid ${c}`, width: NODE_W },
+        style: {
+          borderLeft: `4px solid ${c}`,
+          width: NODE_W,
+          background: '#18181b',
+          border: '1px solid #3f3f46',
+          borderLeftWidth: 4,
+          borderLeftColor: c,
+          color: '#fafafa',
+          borderRadius: 10,
+          fontSize: 12,
+          boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+        },
       }
     })
-    const fe: Edge[] = edges.map((e) => ({ id: e.id, source: e.source, target: e.target, type: 'default', className: 'flow-edge' }))
+    const fe: Edge[] = edges.map((e) => ({
+      id: e.id, source: e.source, target: e.target, type: 'default', className: 'kgp-edge',
+      style: { stroke: '#71717a', strokeWidth: 1.5 },
+    }))
     return { fn, fe }
   }, [nodes, edges, colours, selected])
 
-  const source = isGlobe ? globe : first
-  if (source.initialLoading && !source.data) return <LoadingState label="Drawing the graph" />
-  if (!source.data) return <p className="kgb__error">{describeError(source.error).message}</p>
+  const source = isExplore ? null : isGlobe ? globe : first
+  if (source?.initialLoading && !source.data) return <LoadingState label="Drawing the graph" />
+  if (source && !source.data) return <p className="kgb__error">{describeError(source.error).message}</p>
+  if (isExplore && !overview) return <LoadingState label="Drawing the graph" />
   const kinds = new Set(nodes.map((n) => n.thing)).size
+  const blurb = isExplore
+    ? 'Business terms or source tables as linked bubbles. Switch Terms / Tables on the canvas.'
+    : isGlobe
+      ? `${kinds} kinds · ${nodes.length} records · ${edges.length} links — each globe is one kind of thing`
+      : 'A few records and their links, left to right. Click a point to open it; grow from there.'
 
   return (
     <section className="kgp" aria-label="The knowledge graph">
       <div className="kgp__bar">
-        <div>
-          <h2>Your knowledge graph</h2>
-          <p className="kg-muted">{isGlobe
-            ? `${kinds} kinds of things, ${nodes.length} real records and ${edges.length} real links. Each globe is one kind of thing; hover a record to light up its links, click it to open it.`
-            : 'A sample of real records to start. Click a point to see it; add its connections to grow the graph.'}</p>
+        <div className="kgp__bar-start">
+          <h2>The dot picture</h2>
+          <p className="kg-muted">{blurb}</p>
         </div>
         <div className="kgp__views" role="tablist" aria-label="How to draw the graph">
-          {VIEWS.map((v) => (
-            <button key={v.id} type="button" role="tab" aria-selected={view === v.id} title={v.hint}
-              className={view === v.id ? 'is-on' : undefined}
-              onClick={() => { setView(v.id); setSelected(null); setNote(null) }}>
-              <v.icon size={14} aria-hidden="true" /> {v.label}
-            </button>
-          ))}
+          {VIEWS.map((v) => {
+            const Icon = v.icon
+            return (
+              <button key={v.id} type="button" role="tab" aria-selected={view === v.id} title={v.hint}
+                className={view === v.id ? 'is-on' : undefined}
+                onClick={() => { setView(v.id); setSelected(null); setNote(null) }}>
+                <Icon size={14} aria-hidden="true" /> {v.label}
+              </button>
+            )
+          })}
         </div>
-        <div className="kgp__find">
-          <EntityPicker oid={oid} label="Find a record" placeholder="Find a record to add"
-            onPick={async (h) => {
-              const pic = await expand(h)
-              const hit = pic?.nodes.find((x) => x.set === h.set && x.key === h.key)
-              if (hit) setSelected(hit)
-            }} />
+        <div className="kgp__bar-end">
+          {!isExplore ? (
+            <div className="kgp__find">
+              <EntityPicker oid={oid} label="Find a record" placeholder="Find a record to add"
+                onPick={async (h) => {
+                  const pic = await expand(h)
+                  const hit = pic?.nodes.find((x) => x.set === h.set && x.key === h.key)
+                  if (hit) setSelected(hit)
+                }} />
+            </div>
+          ) : null}
         </div>
       </div>
 
-      <div className="kgp__legend">
-        {[...colours.entries()].map(([thing, c]) => (
-          <span key={thing}><i style={{ background: c }} /> {thing}</span>
-        ))}
-        <span className="kg-muted">{nodes.length} records shown{isGlobe && totals.size
-          ? ` of ${[...totals.values()].reduce((a, b) => a + b, 0).toLocaleString()}` : ''}</span>
-      </div>
+      {!isExplore ? (
+        <div className="kgp__legend">
+          {[...colours.entries()].map(([thing, c]) => (
+            <span key={thing}><i style={{ background: c }} /> {thing}</span>
+          ))}
+          <span className="kg-muted">{nodes.length} records shown{isGlobe && totals.size
+            ? ` of ${[...totals.values()].reduce((a, b) => a + b, 0).toLocaleString()}` : ''}</span>
+        </div>
+      ) : null}
 
       <div className="kgp__body">
-        {isGlobe ? (
+        {isExplore && overview ? (
+          <div className="kgp__canvas kgp__canvas--globe kgp__canvas--explore">
+            <ExploreCanvas overview={overview} />
+          </div>
+        ) : isGlobe ? (
           <div className="kgp__canvas kgp__canvas--globe">
             <GlobeGraph nodes={gNodes} edges={gEdges} colours={colours} order={order} totals={totals}
-              mode={view as GlobeMode} selected={selected?.id ?? null}
+              mode="globes" selected={selected?.id ?? null}
               onSelect={(id) => setSelected(gNodes.find((n) => n.id === id) ?? null)} />
           </div>
         ) : (
-        <div className="kgp__canvas">
-          <ReactFlow nodes={flow.fn} edges={flow.fe} fitView fitViewOptions={{ padding: 0.15 }}
-            minZoom={0.1} maxZoom={1.6} nodesConnectable={false}
+        <div className="kgp__canvas kgp__canvas--flow">
+          <ReactFlow nodes={flow.fn} edges={flow.fe} fitView fitViewOptions={{ padding: 0.18 }}
+            minZoom={0.1} maxZoom={1.6} nodesConnectable={false} colorMode="dark"
+            proOptions={{ hideAttribution: true }}
             onNodeClick={(_, node) => setSelected(nodes.find((n) => n.id === node.id) ?? null)}>
-            <Background gap={20} size={1} />
-            <Controls showInteractive={false} />
+            <Background gap={22} size={1} color="#3f3f46" />
+            <Controls showInteractive={false} className="kgp__controls" />
           </ReactFlow>
         </div>
         )}
-        {selected ? (
+        {!isExplore && selected ? (
           <RecordPanel oid={oid} node={selected} colour={colours.get(selected.thing)} busy={busy}
             onExpand={() => void expand(selected)} onClose={() => setSelected(null)}
             onOpen={async (ref) => {

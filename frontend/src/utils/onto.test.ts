@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { OntoField, OntoLink, OntoThing } from '../api/types'
 import {
-  CHECK, centralThing, checkedShare, conflictCount, filterFields, filterThings, flowLayout, matchLabel, sourceLine, thingProof, timeAgo,
+  CHECK, centralThing, checkedShare, conflictCount, filterFields, filterThings, flowLayout, matchLabel, relatedThings, sourceLine, thingProof, timeAgo,
 } from './onto'
 
 function field(over: Partial<OntoField> = {}): OntoField {
@@ -26,6 +26,16 @@ describe('onto helpers', () => {
   it('reads checks the same way everywhere', () => {
     expect(CHECK.conflict.tone).toBe('rose')
     expect(CHECK.verified.label).toBe('Checked in data')
+  })
+
+  it('separates direct links from things reached through a shared record', () => {
+    // Product–OrderItem–Seller and OrderItem–Order: Product reaches Seller and
+    // Order only through Order Item.
+    const ls = [link('Order Item', 'Product'), link('Order Item', 'Seller'), link('Order Item', 'Order')]
+    const r = relatedThings(ls, 'Product')
+    expect(r.direct).toEqual(['Order Item'])
+    expect(r.indirect.map((x) => x.thing).sort()).toEqual(['Order', 'Seller'])
+    expect(r.indirect.every((x) => x.through === 'Order Item')).toBe(true)
   })
 
   it('splits a thing into proved / data-disagrees / to-check', () => {

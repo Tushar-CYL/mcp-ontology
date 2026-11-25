@@ -271,10 +271,19 @@ def register(app, platform, error) -> None:
 
     @app.post("/api/onto/{oid}/ask")
     def onto_ask(oid: str, request: Request, body: AskRequest):
+        """Ontology Ask: this ontology's terms, rules, and catalogue SQL only."""
         from ontology import ask
         layer = platform(request).layer
         return guard(lambda: ask.ask(layer, oid, body.question, client=ai_client(),
                                      version=body.version, max_rows=body.max_rows))
+
+    @app.post("/api/chat/{oid}")
+    def global_chat(oid: str, request: Request, body: AskRequest):
+        """Global Chat: ontology + knowledge graph + semantic + context."""
+        from ontology import chat as onto_chat
+        layer = platform(request).layer
+        return guard(lambda: onto_chat.chat(layer, oid, body.question, client=ai_client(),
+                                            version=body.version, max_rows=body.max_rows))
 
     @app.get("/api/onto/{oid}/ossie")
     def onto_ossie(oid: str, request: Request, version: int | None = None):

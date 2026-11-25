@@ -1,10 +1,9 @@
-import { useState } from 'react'
-import { CircleCheck, Lightbulb, Play, RefreshCw, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { CircleCheck, Lightbulb, Play, RefreshCw, Search, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
 import { api, describeError } from '../../api/client'
 import type { BizRule, RulesListing } from '../../api/types'
 import { Button } from '../../components/Button'
 import { useToast } from '../../context/ToastContext'
-import { WhatDepends } from '../../components/WhatDepends'
 import { useAsync } from '../../hooks/useAsync'
 import { cx } from '../../utils/cx'
 
@@ -15,17 +14,26 @@ const TYPE: Record<string, string> = {
 const STATUS: Record<string, string> = { proposed: 'Proposed', active: 'Active', retired: 'Retired' }
 
 /**
- * Business rules you can check. A person writes a rule in plain words (or
- * picks one suggested from the data); Strata turns it into a check, runs it
- * on the data and shows who follows it and who does not. A person activates
- * it with an owner: only then does the AI get it as a fact.
+ * Business rules checked on this ontology’s data only. Plain-language rule →
+ * check on the published tables → activate so Ask treats it as a fact.
  */
 export function RulesPanel({ oid }: { oid: string }) {
   const toast = useToast()
   const state = useAsync<RulesListing>((signal) => api.rules(oid, signal), [oid])
   const [text, setText] = useState('')
+  const [filter, setFilter] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const d = state.data
+  const needle = filter.trim().toLowerCase()
+  const shown = useMemo(() => {
+    const rows = d?.rules ?? []
+    if (!needle) return rows
+    return rows.filter((r) =>
+      r.text.toLowerCase().includes(needle)
+      || r.spec.thing.toLowerCase().includes(needle)
+      || r.spec.label.toLowerCase().includes(needle)
+      || (STATUS[r.status] ?? r.status).toLowerCase().includes(needle))
+  }, [d?.rules, needle])
 
   const act = async (key: string, fn: () => Promise<unknown>, done: string) => {
     setBusy(key)
@@ -40,62 +48,71 @@ export function RulesPanel({ oid }: { oid: string }) {
     }
   }
   const add = (words: string) => act('add', () => api.ruleAdd(oid, words).then(() => setText('')),
-    'Rule checked on the data')
+    'Rule checked on the ontology data')
 
   return (
-    <section className="rules" aria-label="Business rules">
-      <div className="rules__intro">
-        <h2>Business rules</h2>
-        <p>Write a rule the way your business says it. Strata turns it into a check, runs it on the data
-          and shows which records break it. Nothing changes until a person activates it; then every answer
-          the AI gives about that thing comes with the rule.</p>
+    <section className="rules rules--pane" aria-label="Business rules">
+      <div className="rules__chrome">
+        <div className="rules__intro">
+          <h2>Business rules</h2>
+          <p>Rules apply only to this ontology’s terms and tables. Write one in plain words,
+            check it on the data, then activate it so Ask answers with that fact.</p>
+        </div>
+
+        <form className="rules__write" onSubmit={(e) => { e.preventDefault(); if (text.trim()) void add(text.trim()) }}>
+          <input className="input" value={text} maxLength={500} aria-label="A business rule in plain words"
+            placeholder={d?.suggestions[0] ? `For example: ${d.suggestions[0].text}` : 'A rule in plain words'}
+            onChange={(e) => setText(e.target.value)} />
+          <Button type="submit" variant="primary" icon={<Play size={14} />} loading={busy === 'add'}
+            disabled={!text.trim()}>Check on data</Button>
+        </form>
+
+        {d?.suggestions.length ? (
+          <div className="rules__suggest">
+            <p className="rules__kicker"><Lightbulb size={14} aria-hidden="true" /> Suggested from this ontology</p>
+            <div className="rules__chips">
+              {d.suggestions.map((s) => (
+                <button key={s.text} type="button" className={cx('rules-chip', s.broken > 0 && 'is-broken')}
+                  disabled={busy === 'add'} title={s.why} onClick={() => void add(s.text)}>
+                  <span>{s.text}</span><small>{s.why}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {d?.conflicts.length ? (
+          <div className="rules__conflicts" role="alert">
+            <p className="rules__kicker"><TriangleAlert size={14} aria-hidden="true" /> Metrics that ignore a rule</p>
+            <ul>
+              {d.conflicts.map((c) => (
+                <li key={`${c.rule}|${c.metric}`}>{c.text}{c.certified ? ' (certified)' : ''}.</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="rules__toolbar">
+          <label className="rules__search">
+            <Search size={14} aria-hidden="true" />
+            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search rules…" aria-label="Search rules" />
+          </label>
+          {d ? (
+            <p className="rules__summary">{d.summary.active} active · {d.summary.proposed} waiting
+              {d.summary.failing ? ` · ${d.summary.failing} broken` : ''}</p>
+          ) : null}
+        </div>
       </div>
 
-      <form className="rules__write" onSubmit={(e) => { e.preventDefault(); if (text.trim()) void add(text.trim()) }}>
-        <input className="input" value={text} maxLength={500} aria-label="A business rule in plain words"
-          placeholder={d?.suggestions[0] ? `For example: ${d.suggestions[0].text}` : 'A rule in plain words'}
-          onChange={(e) => setText(e.target.value)} />
-        <Button type="submit" variant="primary" icon={<Play size={14} />} loading={busy === 'add'}
-          disabled={!text.trim()}>Check it on the data</Button>
-      </form>
-
-      {d?.suggestions.length ? (
-        <div className="rules__suggest">
-          <p className="rules__kicker"><Lightbulb size={14} aria-hidden="true" /> Suggested from your data: click one to check it</p>
-          <div className="rules__chips">
-            {d.suggestions.map((s) => (
-              <button key={s.text} type="button" className={cx('rules-chip', s.broken > 0 && 'is-broken')}
-                disabled={busy === 'add'} title={s.why} onClick={() => void add(s.text)}>
-                <span>{s.text}</span><small>{s.why}</small>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {d?.conflicts.length ? (
-        <div className="rules__conflicts" role="alert">
-          <p className="rules__kicker"><TriangleAlert size={14} aria-hidden="true" /> Metrics that ignore a rule</p>
-          <ul>
-            {d.conflicts.map((c) => (
-              <li key={`${c.rule}|${c.metric}`}>{c.text}{c.certified ? ' (certified)' : ''}. Fix the metric&apos;s
-                filter on the Semantic page, or retire the rule.</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {!d ? <p className="rules__muted">{state.error ? describeError(state.error).message : 'Reading the rules…'}</p> : (
-        <>
-          <p className="rules__summary">{d.summary.active} active · {d.summary.proposed} waiting for a decision
-            {d.summary.failing ? ` · ${d.summary.failing} broken by some records` : ''}</p>
-          {d.rules.length ? (
+      <div className="rules__scroll">
+        {!d ? <p className="rules__muted">{state.error ? describeError(state.error).message : 'Reading the rules…'}</p> : (
+          shown.length ? (
             <ul className="rules__list">
-              {d.rules.map((r) => <RuleCard key={r.id} oid={oid} r={r} busy={busy} act={act} />)}
+              {shown.map((r) => <RuleCard key={r.id} oid={oid} r={r} busy={busy} act={act} />)}
             </ul>
-          ) : <p className="rules__muted">No rules yet. Write one, or click a suggestion above.</p>}
-        </>
-      )}
+          ) : <p className="rules__muted">{needle ? 'No rules match that search.' : 'No rules yet. Write one, or click a suggestion above.'}</p>
+        )}
+      </div>
     </section>
   )
 }
@@ -115,7 +132,7 @@ function RuleCard({ oid, r, busy, act }: {
     <li className={cx('rule', `is-${r.status}`, !counting && failed > 0 && 'is-broken')}>
       <div className="rule__head">
         <span className={cx('rule__status', `is-${r.status}`)}>{STATUS[r.status]}</span>
-        <span className="rule__type">{TYPE[r.spec.type] ?? r.spec.type} · {r.spec.thing} . {r.spec.label}</span>
+        <span className="rule__type">{TYPE[r.spec.type] ?? r.spec.type} · {r.spec.thing} · {r.spec.label}</span>
       </div>
       <p className="rule__text">{r.text}</p>
 
@@ -139,7 +156,6 @@ function RuleCard({ oid, r, busy, act }: {
       ) : null}
 
       <p className="rule__meta">Written by {r.by}{r.owner ? ` · owner ${r.owner}` : ''}
-        {r.decided_by ? ` · ${r.status === 'active' ? 'activated' : 'decided'} by ${r.decided_by}` : ''}
         {res.at ? ` · checked ${new Date(res.at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}</p>
 
       <div className="rule__actions">
@@ -148,7 +164,7 @@ function RuleCard({ oid, r, busy, act }: {
             <input className="input" value={owner} placeholder="Owner, e.g. a team" aria-label="Owner"
               onChange={(e) => setOwner(e.target.value)} />
             <Button size="sm" variant="primary" icon={<ShieldCheck size={14} />} loading={busy === `on:${r.id}`}
-              onClick={() => void act(`on:${r.id}`, () => api.ruleActivate(oid, r.id, owner), 'Rule active: the AI now uses it')}>
+              onClick={() => void act(`on:${r.id}`, () => api.ruleActivate(oid, r.id, owner), 'Rule active for Ask')}>
               Activate</Button>
           </>
         ) : (
@@ -160,7 +176,6 @@ function RuleCard({ oid, r, busy, act }: {
         <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} loading={busy === `rm:${r.id}`}
           onClick={() => void act(`rm:${r.id}`, () => api.ruleRemove(oid, r.id), 'Rule removed')}>Remove</Button>
       </div>
-      <WhatDepends oid={oid} kind="rule" target={r.id} compact />
     </li>
   )
 }

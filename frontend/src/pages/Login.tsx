@@ -1,30 +1,35 @@
 import { useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { KeyRound } from 'lucide-react'
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, describeError } from '../api/client'
-import { Button } from '../components/Button'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { readSession, writeSession } from '../session'
 
 /**
- * Sign in with the server's access token (STRATA_API_TOKENS). Shown only
- * when the server requires one; a laptop install never sees this page.
+ * The front door. Email and password, then the workspace the person already
+ * has: their ontologies, graph, semantic layer and context. When this server
+ * requires an access token, the password is that token.
  */
 export function Login() {
   useDocumentTitle('Sign in')
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const [token, setToken] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const next = params.get('next') || '/tools/ontology'
+  const destination = next.startsWith('/') && !next.startsWith('//') ? next : '/tools/ontology'
+
+  if (readSession()) return <Navigate to={destination} replace />
 
   const submit = async () => {
-    if (!token.trim()) return
+    if (!email.trim() || !password.trim()) return
     setBusy(true)
     setError(null)
     try {
-      await api.login(token.trim())
-      navigate(next.startsWith('/') ? next : '/tools/ontology', { replace: true })
+      await api.login(password.trim())
+      writeSession(email.trim())
+      navigate(destination, { replace: true })
     } catch (e) {
       setError(describeError(e).message)
     } finally {
@@ -35,18 +40,24 @@ export function Login() {
   return (
     <main className="login">
       <form className="login__card" onSubmit={(e) => { e.preventDefault(); void submit() }}>
-        <span className="brand-mark" aria-hidden="true">S</span>
-        <h1>Sign in to Strata</h1>
-        <p>This server requires an access token. Ask the person who runs it, or find it in the server's <code>STRATA_API_TOKENS</code> setting.</p>
-        <label className="field">
-          <span className="field__label">Access token</span>
-          <input className="input" type="password" autoComplete="current-password" value={token}
-            onChange={(e) => setToken(e.target.value)} autoFocus />
+        <div className="login__brand">
+          <span className="login__mark" aria-hidden="true" />
+          Strata
+        </div>
+        <label className="login__field">
+          Email
+          <input className="login__input" type="email" autoComplete="username" required autoFocus
+            value={email} onChange={(e) => setEmail(e.target.value)} />
+        </label>
+        <label className="login__field">
+          Password
+          <input className="login__input" type="password" autoComplete="current-password" required
+            value={password} onChange={(e) => setPassword(e.target.value)} />
         </label>
         {error ? <p className="login__error" role="alert">{error}</p> : null}
-        <Button type="submit" variant="primary" icon={<KeyRound size={15} />} loading={busy} disabled={!token.trim()} fullWidth>
-          Sign in
-        </Button>
+        <button type="submit" className="login__submit" disabled={busy || !email.trim() || !password.trim()}>
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
       </form>
     </main>
   )

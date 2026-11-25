@@ -29,27 +29,61 @@ export function WhatDepends({ oid, kind, target, open: startOpen = false, compac
   )
 }
 
+const PLAIN: Record<string, { title: string; help: string }> = {
+  ontology: { title: 'Links', help: 'Other things joined to this one.' },
+  graph: { title: 'Records', help: 'Real rows in the data that use this join.' },
+  semantic: { title: 'Numbers', help: 'Figures calculated from this. Proposed means a person has not approved it yet.' },
+  rules: { title: 'Rules', help: 'Business rules that mention this.' },
+  context: { title: 'Answers', help: 'Questions and reports that used this.' },
+  agents: { title: 'Agents', help: 'Agents that are allowed to read this.' },
+}
+
+function plainText(text: string): string {
+  return text.replace(/[“”"]/g, '').replace(/^(Metric|Agent|Link|Rule|Note|Verified question|Report check)\s+/i, '')
+}
+
+function usefulDetail(detail: string): string {
+  const text = detail.trim()
+  if (!text || /^reads\b/i.test(text)) return ''
+  return text.replace(/[“”"]/g, '')
+}
+
 function ImpactBody({ oid, kind, target }: { oid: string; kind: ImpactKind; target: string }) {
   const r = useAsync<ImpactResult>((signal) => api.impact(oid, kind, target, signal), [oid, kind, target])
   if (r.error) return <p className="impact__muted">{describeError(r.error).message}</p>
-  if (!r.data) return <p className="impact__muted">Looking across every layer…</p>
+  if (!r.data) return <p className="impact__muted">Checking what uses this…</p>
   const d = r.data
+  const name = d.target.title
   return (
     <div className="impact__body">
-      <p className={cx('impact__summary', d.total ? 'is-some' : 'is-none')}>{d.summary}.</p>
+      <p className={cx('impact__summary', d.total ? 'is-some' : 'is-none')}>
+        {d.total
+          ? `If ${name} changes, ${d.total} thing${d.total === 1 ? '' : 's'} that use it change with it.`
+          : `Nothing else uses ${name}. It is safe to change.`}
+      </p>
       {d.tell.length ? (
-        <p className="impact__tell"><Megaphone size={14} aria-hidden="true" /> Tell before you change it: <strong>{d.tell.join(', ')}</strong></p>
+        <p className="impact__tell"><Megaphone size={14} aria-hidden="true" /> Tell {d.tell.join(', ')} before you change it.</p>
       ) : null}
-      {d.groups.map((g) => (
-        <div key={g.layer} className="impact__group">
-          <p className="impact__layer">{g.title} <span>{g.items.length}</span></p>
-          <ul>
-            {g.items.map((i) => (
-              <li key={`${i.ref}|${i.text}`}><span>{i.text}</span>{i.detail ? <small>{i.detail}</small> : null}</li>
-            ))}
-          </ul>
-        </div>
-      ))}
+      {d.groups.map((g) => {
+        const plain = PLAIN[g.layer] ?? { title: g.title, help: '' }
+        return (
+          <section key={g.layer} className="impact__group">
+            <p className="impact__layer">{plain.title} <span>{g.items.length}</span></p>
+            {plain.help ? <p className="impact__help">{plain.help}</p> : null}
+            <ul>
+              {g.items.map((item) => {
+                const detail = usefulDetail(item.detail)
+                return (
+                  <li key={`${item.ref}|${item.text}`}>
+                    <span>{plainText(item.text)}</span>
+                    {detail ? <small>{detail}</small> : null}
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        )
+      })}
     </div>
   )
 }

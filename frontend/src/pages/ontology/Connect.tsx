@@ -1,8 +1,7 @@
-import { useState, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { Database, FileText, KeyRound, Plus, Sparkles, Waypoints, X } from 'lucide-react'
+import { useState } from 'react'
+import { Database, FileText, Plus, Sparkles, X } from 'lucide-react'
 import { api, describeError } from '../../api/client'
-import type { EoJob, OntoAi, OntoBuildMode } from '../../api/types'
+import type { EoJob, OntoAi } from '../../api/types'
 import { Badge } from '../../components/Badge'
 import { Button } from '../../components/Button'
 import { Callout } from '../../components/Callout'
@@ -10,15 +9,6 @@ import { Card } from '../../components/Card'
 import { TextInput } from '../../components/Field'
 import { useSource } from '../../context/SourceContext'
 import { JobLog } from './shared'
-
-const MODES: Array<{ id: OntoBuildMode; title: string; text: string; icon: ReactNode }> = [
-  { id: 'data', title: 'Build from my data', icon: <Sparkles size={18} />,
-    text: 'The AI names the things and fields; the data checks every name. Your metadata helps.' },
-  { id: 'model', title: 'Use my ontology exactly', icon: <Waypoints size={18} />,
-    text: 'Your names, fields and links from your file, bound to this data and checked. No AI.' },
-  { id: 'keys', title: 'Keys only', icon: <KeyRound size={18} />,
-    text: 'Names from the columns and the keys the database declares. No AI, fastest.' },
-]
 
 /**
  * Screen 1: connect. Pick data that is already connected or point at a new
@@ -30,23 +20,30 @@ export function Connect({ ai, onBuilt }: { ai: OntoAi | undefined; onBuilt: (oid
   const [name, setName] = useState('')
   const [domain, setDomain] = useState('')
   const [picked, setPicked] = useState<string[]>([])
-  const [paths, setPaths] = useState<string[]>([])
+  const [paths, setPaths] = useState<Array<{ path: string; name?: string; shown: string }>>([])
   const [pathDraft, setPathDraft] = useState('')
+  const [sourceName, setSourceName] = useState('')
+  const [userId, setUserId] = useState('')
+  const [password, setPassword] = useState('')
   const [metadata, setMetadata] = useState<string[]>([])
   const [metaDraft, setMetaDraft] = useState('')
   const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
-  const [params] = useSearchParams()
-  const asked = params.get('mode')
-  const [mode, setMode] = useState<OntoBuildMode>(asked === 'model' || asked === 'keys' ? asked : 'data')
 
   const toggle = (id: string) =>
     setPicked((now) => (now.includes(id) ? now.filter((x) => x !== id) : [...now, id]))
   const addPath = () => {
-    const p = pathDraft.trim().replace(/^"|"$/g, '')
-    if (p && !paths.includes(p)) setPaths([...paths, p])
+    const raw = pathDraft.trim().replace(/^"|"$/g, '')
+    if (!raw) return
+    const path = withLogin(raw, userId.trim(), password)
+    const label = sourceName.trim()
+    if (paths.some((item) => item.path === path)) return
+    setPaths([...paths, { path, name: label || undefined, shown: label ? `${label} · ${redact(path)}` : redact(path) }])
     setPathDraft('')
+    setSourceName('')
+    setUserId('')
+    setPassword('')
   }
   const addMeta = () => {
     const p = metaDraft.trim().replace(/^"|"$/g, '')
@@ -54,14 +51,14 @@ export function Connect({ ai, onBuilt }: { ai: OntoAi | undefined; onBuilt: (oid
     setMetaDraft('')
   }
   const nothing = !picked.length && !paths.length && !metadata.length
-  const needsFile = mode === 'model' && !metadata.length
   const build = async () => {
     setError(null)
     setStarting(true)
     try {
       const out = await api.ontoBuild({
         name: name.trim() || 'My ontology', sources: picked,
-        paths: paths.map((path) => ({ path })), metadata, domain: domain.trim(), mode,
+        paths: paths.map(({ path, name: source }) => ({ path, name: source })),
+        metadata, domain: domain.trim(), mode: 'data',
       })
       setJobId(out.job_id)
     } catch (e) {
@@ -104,33 +101,26 @@ export function Connect({ ai, onBuilt }: { ai: OntoAi | undefined; onBuilt: (oid
             ))}
           </div>
         ) : <p className="muted">Nothing connected yet. Add a path below.</p>}
+        <div className="onto-name">
+          <TextInput label="Dataset name" value={sourceName} placeholder="e.g. shop, olist"
+            onChange={(e) => setSourceName(e.target.value)} />
+          <TextInput label="User id" value={userId} placeholder="Database user" autoComplete="off"
+            onChange={(e) => setUserId(e.target.value)} />
+          <TextInput label="Password" type="password" value={password} placeholder="Database password" autoComplete="new-password"
+            onChange={(e) => setPassword(e.target.value)} />
+        </div>
         <div className="onto-add">
           <TextInput label="Add a file, folder or database" value={pathDraft}
-            placeholder="D:\data\sales.csv   or   D:\data\shop\   or   postgres://user:pw@host/db   or   mongodb://host/db"
+            placeholder="D:\data\sales.csv   or   postgres://host/db   or   mysql://host/db"
             onChange={(e) => setPathDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') addPath() }} />
           <Button icon={<Plus size={15} />} onClick={addPath} disabled={!pathDraft.trim()}>Add</Button>
         </div>
-        <Chips items={paths} onRemove={(p) => setPaths(paths.filter((x) => x !== p))} />
+        <Chips items={paths.map((item) => item.shown)} onRemove={(shown) => setPaths(paths.filter((item) => item.shown !== shown))} />
       </Card>
 
-      <Card title="How to build it">
-        <div className="onto-modes" role="radiogroup" aria-label="How to build it">
-          {MODES.map((m) => (
-            <label key={m.id} className={`onto-mode${mode === m.id ? ' is-picked' : ''}`}>
-              <input type="radio" name="mode" value={m.id} checked={mode === m.id} onChange={() => setMode(m.id)} />
-              <span className="onto-mode__icon" aria-hidden="true">{m.icon}</span>
-              <span className="onto-mode__title">{m.title}</span>
-              <span className="onto-mode__text">{m.text}</span>
-            </label>
-          ))}
-        </div>
-      </Card>
-
-      <Card title={mode === 'model' ? 'Your ontology file' : 'Metadata you already have (optional)'}
-        subtitle={mode === 'model'
-          ? 'A Strata Model (.json, downloaded from any Strata ontology or written by hand), an Apache Ossie model (.yaml), a dbt schema.yml or a data dictionary (.csv / .xlsx). Its things, fields and links are used exactly, then checked against the data.'
-          : 'A Power BI / Fabric semantic model (.bim), a dbt file (schema.yml), an Ossie model, a Strata Model (.json) or a data dictionary (.csv / .xlsx with table, column, description). Its descriptions win over the AI. A semantic model alone is enough to start.'}>
+      <Card title="Metadata you already have (optional)"
+        subtitle="A Power BI / Fabric semantic model (.bim), a dbt file (schema.yml), an Ossie model, a Strata Model (.json) or a data dictionary (.csv / .xlsx with table, column, description). Its descriptions win over the AI. A semantic model alone is enough to start.">
         <div className="onto-add">
           <TextInput label="Metadata file" value={metaDraft}
             placeholder="D:\models\model.bim   or   D:\dbt\models\schema.yml   or   D:\dictionary.csv"
@@ -150,17 +140,34 @@ export function Connect({ ai, onBuilt }: { ai: OntoAi | undefined; onBuilt: (oid
             hint="A few words help the AI choose the right business names."
             onChange={(e) => setDomain(e.target.value)} />
         </div>
-        {mode === 'data' ? <AiLine ai={ai} /> : null}
+        <AiLine ai={ai} />
         {error ? <Callout tone="danger" title="Could not build">{error}</Callout> : null}
         <div className="onto-actions">
           <Button variant="primary" icon={<Sparkles size={16} />} onClick={build}
-            loading={starting} disabled={nothing || needsFile}>Build ontology</Button>
-          {nothing ? <span className="muted">Pick or add data, or add a semantic model.</span>
-            : needsFile ? <span className="muted">Add your ontology file above.</span> : null}
+            loading={starting} disabled={nothing}>Build ontology</Button>
+          {nothing ? <span className="muted">Pick or add data, or add a semantic model.</span> : null}
         </div>
       </Card>
     </div>
   )
+}
+
+/** Put the user id and password into a database URL. A file path is left as it is. */
+function withLogin(raw: string, user: string, password: string): string {
+  if (!user && !password) return raw
+  try {
+    const url = new URL(raw)
+    if (!url.protocol || url.protocol === 'file:') return raw
+    if (user) url.username = user
+    if (password) url.password = password
+    return url.toString()
+  } catch {
+    return raw
+  }
+}
+
+function redact(path: string): string {
+  return path.replace(/:([^:@/]+)@/, ':***@')
 }
 
 function Chips({ items, onRemove }: { items: string[]; onRemove: (item: string) => void }) {

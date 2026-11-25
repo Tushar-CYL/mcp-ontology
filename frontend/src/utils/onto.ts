@@ -61,6 +61,34 @@ export function conflictCount(thing: OntoThing): number {
   return thing.fields.filter((f) => f.check === 'conflict').length
 }
 
+/**
+ * Things related to one thing: `direct` are joined by a proven link (a foreign
+ * key); `indirect` are connected through a shared record (two hops, e.g. Product
+ * and Seller both appear in Order Item), each with the thing they go through.
+ * We keep the two apart so a proven link is never dressed up as a guess.
+ */
+export function relatedThings(
+  links: OntoLink[],
+  name: string,
+): { direct: string[]; indirect: Array<{ thing: string; through: string }> } {
+  const neighbours = (n: string) => links
+    .filter((l) => l.from_thing === n || l.to_thing === n)
+    .map((l) => (l.from_thing === n ? l.to_thing : l.from_thing))
+    .filter((x) => x && x !== n)
+  const direct = Array.from(new Set(neighbours(name)))
+  const known = new Set<string>([name, ...direct])
+  const indirect: Array<{ thing: string; through: string }> = []
+  const seen = new Set<string>()
+  for (const bridge of direct) {
+    for (const other of new Set(neighbours(bridge))) {
+      if (known.has(other) || seen.has(other)) continue
+      seen.add(other)
+      indirect.push({ thing: other, through: bridge })
+    }
+  }
+  return { direct, indirect }
+}
+
 /** Per-thing proof split: fields proved by the data, fields the data disagrees
  *  with, and fields not checked yet. Drives the thing's trust bar. */
 export function thingProof(thing: OntoThing): { proved: number; disagrees: number; todo: number } {

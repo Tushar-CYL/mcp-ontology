@@ -639,9 +639,15 @@ export const api = {
       method: 'DELETE', signal,
     }),
 
-  /** A business question answered from the published ontology (AI writes the SQL). */
+  /** Ontology Ask: this ontology's terms, rules, and catalogue SQL only. */
   ontoAsk: (oid: string, question: string, signal?: AbortSignal) =>
     request<OntoAsk>(`/onto/${encodeURIComponent(oid)}/ask`, {
+      method: 'POST', body: { question }, signal, timeoutMs: 180_000,
+    }),
+
+  /** Global Chat: ontology + knowledge graph + semantic + context. */
+  globalChat: (oid: string, question: string, signal?: AbortSignal) =>
+    request<OntoAsk>(`/chat/${encodeURIComponent(oid)}`, {
       method: 'POST', body: { question }, signal, timeoutMs: 180_000,
     }),
 

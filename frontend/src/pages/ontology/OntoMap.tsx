@@ -100,12 +100,24 @@ export function OntoMap({ view, selected, onOpen }: {
   return (
     <div className={`onto-flow${dense ? ' onto-flow--dense' : ''}`} aria-label="Map of business things and their links">
       <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} fitView
-        fitViewOptions={{ padding: 0.15 }} minZoom={0.2} maxZoom={1.6}
+        fitViewOptions={{ padding: 0.18 }} minZoom={0.15} maxZoom={1.8}
+        proOptions={{ hideAttribution: true }}
         nodesConnectable={false}
+        colorMode="dark"
         onNodeClick={(_, node) => { const k = keyOf.get(node.id); if (k) onOpen(k) }}>
-        <Background gap={20} size={1} />
-        <MiniMap pannable zoomable className="onto-flow__minimap" nodeColor="#2e2e38" nodeStrokeWidth={0} maskColor="rgba(246,246,250,0.7)" />
-        <Controls showInteractive={false} />
+        <Background gap={22} size={1} color="#3f3f46" />
+        <MiniMap
+          pannable
+          zoomable
+          className="onto-flow__minimap"
+          style={{ width: 148, height: 104 }}
+          bgColor="#09090b"
+          nodeColor={(n) => (n.selected ? '#ffe600' : '#52525b')}
+          nodeStrokeColor="#a1a1aa"
+          nodeStrokeWidth={1}
+          maskColor="rgba(9, 9, 11, 0.55)"
+        />
+        <Controls showInteractive={false} className="onto-flow__controls" />
       </ReactFlow>
       <p className="onto-flow__legend">
         {dense ? 'Each line joins two things that are related; its label says how many relations. '

@@ -10,10 +10,13 @@ import { NotFound } from './pages/NotFound'
 import { Onboarding } from './pages/Onboarding'
 import { OntologyAccelerator } from './pages/ontology/OntologyAccelerator'
 import { SimpleOntology } from './pages/ontology/SimpleOntology'
+import { TermsPage } from './pages/ontology/TermsPage'
+import { DataPage } from './pages/ontology/DataPage'
 import { KnowledgeGraphTool } from './pages/graph/KnowledgeGraphTool'
 import { ContextTool } from './pages/context/ContextTool'
 import { SemanticTool } from './pages/semantic/SemanticTool'
 import { UseAnywhere } from './pages/UseAnywhere'
+import { GlobalChat } from './pages/chat/GlobalChat'
 
 export default function App() {
   return (
@@ -28,6 +31,8 @@ export default function App() {
                     removed) still lands there for old bookmarks. */}
                 <Route index element={<Navigate to="/tools/ontology" replace />} />
                 <Route path="home" element={<Navigate to="/tools/ontology" replace />} />
+                <Route path="terms" element={<TermsPage />} />
+                <Route path="data" element={<DataPage />} />
                 <Route path="tools/ontology" element={<SimpleOntology />} />
                 <Route path="tools/ontology/:oid" element={<SimpleOntology />} />
                 <Route path="tools/graph" element={<KnowledgeGraphTool />} />
@@ -39,6 +44,8 @@ export default function App() {
                 {/* The full governance journey (approvals, roles, maturity). */}
                 <Route path="tools/ontology-advanced" element={<OntologyAccelerator />} />
                 <Route path="tools/ontology-advanced/:oid" element={<OntologyAccelerator />} />
+                <Route path="chat" element={<GlobalChat />} />
+                <Route path="chat/:oid" element={<GlobalChat />} />
                 <Route path="onboarding" element={<Onboarding />} />
                 {/* The old "four layers" pages were replaced by the tools above;
                     their links still land on the matching tool. */}

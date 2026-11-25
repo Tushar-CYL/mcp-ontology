@@ -90,7 +90,10 @@ export function SimpleOntology() {
   }
 
   const raw = params.get('tab')
-  const tab: Tab = raw === 'map' || raw === 'use' || raw === 'ask' || raw === 'rules' ? raw : 'overview'
+  // Old ?tab=rules links open Ask (rules live inside Ask now).
+  const tab: Tab = raw === 'map' || raw === 'use' || raw === 'ask' || raw === 'rules'
+    ? (raw === 'rules' ? 'ask' : raw)
+    : 'overview'
   return (
     <Workspace key={oid} oid={oid} tab={tab}
       others={known.map((o) => ({ id: o.id, name: o.name }))}
@@ -136,23 +139,17 @@ function Workspace({ oid, tab, others, onTab, onSwitch, onNew, onAll, onDeleted 
     }
     return <div className="page"><ErrorState error={state.error} onRetry={state.reload} /></div>
   }
-  const updated = timeAgo(view.published_at)
   return (
-    <div className="page">
-      <PageHeader eyebrow="Ontology" title={view.name}
-        description={[view.domain, sourceLine(view.sources, view.metadata), updated && `updated ${updated}`]
-          .filter(Boolean).join(' · ')}
-        actions={
-          <div className="onto-header-actions">
-            {others.length > 1 ? (
-              <select className="input" value={oid} aria-label="Switch ontology" onChange={(e) => onSwitch(e.target.value)}>
-                {others.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
-            ) : null}
-            <Button variant="ghost" size="sm" icon={<List size={14} />} onClick={onAll}>All ontologies</Button>
-            <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={onNew}>New ontology</Button>
-          </div>
-        } />
+    <div className="page page--fill">
+      <div className="onto-toolbar">
+        {others.length > 1 ? (
+          <select className="input" value={oid} aria-label="Switch ontology" onChange={(e) => onSwitch(e.target.value)}>
+            {others.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+        ) : <strong className="onto-toolbar__name">{view.name}</strong>}
+        <Button variant="ghost" size="sm" icon={<List size={14} />} onClick={onAll}>All ontologies</Button>
+        <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={onNew}>New ontology</Button>
+      </div>
       <OntologyView view={view} tab={tab} onTab={onTab}
         onChange={(next) => (next ? setFresh(next) : setTick((t) => t + 1))}
         onDeleted={onDeleted} />

@@ -1195,7 +1195,7 @@ export interface OntoUse {
   files: { json: string; model: string; ossie: string; owl: string; shacl: string; git_zip: string }
 }
 
-/** ask_question: rows + the SQL that produced them + the fields it used. */
+/** ask_question: explain/rules prose, or cross-layer chat with SQL/cards. */
 export interface OntoAsk {
   ontology: string
   version: number | null
@@ -1204,6 +1204,8 @@ export interface OntoAsk {
   things: string[]
   unknown_words: string[]
   answerable: boolean
+  /** explain | rules | query — SQL/table only for query. */
+  mode?: 'explain' | 'rules' | 'query'
   sql: string | null
   explanation: string
   columns: string[]
@@ -1216,6 +1218,22 @@ export interface OntoAsk {
     check: OntoCheck; proof: string }>
   checks: Array<{ name: string; passed: boolean; detail: string; severity: string }>
   note: string
+  rules_cited?: string[]
+  /** Matched knowledge-graph records when the question names entities. */
+  records?: Array<{ set: string; key: string; thing: string; label: string }>
+  /** Certified metric used for the number, when any. */
+  metric?: { name: string; title: string; owner?: string | null } | null
+  /** Short proven facts cited in the answer. */
+  facts?: Array<{ text: string; source: string; citation: string }>
+  /** Which layers contributed. */
+  layers_used?: Array<{ layer: string; what: string }>
+  answer_status?: string
+  /** Short supporting line under the headline answer. */
+  detail?: string
+  /** high | medium | low — after validation against live evidence. */
+  confidence?: 'high' | 'medium' | 'low'
+  /** data | ai_checked | facts | catalogue | records | none */
+  answer_source?: string
 }
 
 // ---------------------------------------------------- knowledge graph tool
