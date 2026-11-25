@@ -1242,7 +1242,9 @@ function AskBubble({ msg }: { msg: AskMsg }) {
     )
   }
 
-  const wide = !isUser && (msg.sql || msg.metric || msg.records?.length || msg.facts?.length)
+  const wide = Boolean(
+    !isUser && (msg.sql || msg.metric || (msg.records?.length ?? 0) > 0 || (msg.facts?.length ?? 0) > 0),
+  )
 
   return (
     <div className={cx('onto-chat__bubble', isUser ? 'is-user' : 'is-assistant', wide && 'is-wide', msg.kind === 'error' && 'is-error')}>
